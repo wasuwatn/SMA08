@@ -7,6 +7,7 @@
   "scripts": {
     "setup": "npm install && npm --prefix server install && npm --prefix client install",
     "dev": "concurrently -n server,client -c green,cyan \"npm --prefix server run dev\" \"npm --prefix client run dev -- --host\"",
+    "start": "npm --prefix server start",
     "server": "npm --prefix server run dev",
     "client": "npm --prefix client run dev",
     "build": "npm --prefix client run build",
