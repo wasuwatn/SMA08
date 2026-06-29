@@ -31,6 +31,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST = path.join(__dirname, '..', 'client', 'dist');
 
 const app = express();
+// Render (and most PaaS hosts) sit one reverse-proxy hop in front of us, so
+// req.ip / X-Forwarded-For need this to resolve the real client IP — without
+// it, express-rate-limit's login limiter can't safely key by IP.
+app.set('trust proxy', 1);
 
 // CORS: allow all origins by default (fine when the client is served by this
 // same server). Set CORS_ORIGIN (comma-separated) to restrict in production.
