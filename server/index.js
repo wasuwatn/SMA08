@@ -11,14 +11,24 @@ import {
   updateRow, deleteRow, hashPassword, verifyPassword, logActivity, claimTxn
 } from './db.js';
 
-await initDb();
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET is not set (check server/.env or the host\'s env vars).');
+  process.exit(1);
+}
+const TOKEN_TTL = '12h';
+
+try {
+  await initDb();
+} catch (e) {
+  // A bad DATABASE_URL or unreachable DB used to hang here forever with no
+  // log output at all ("no open ports detected"). Fail loud instead.
+  console.error('FATAL: could not connect to the database.', e.message);
+  process.exit(1);
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST = path.join(__dirname, '..', 'client', 'dist');
-
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) throw new Error('JWT_SECRET is not set (check server/.env)');
-const TOKEN_TTL = '12h';
 
 const app = express();
 

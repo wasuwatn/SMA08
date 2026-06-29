@@ -6,7 +6,10 @@ import bcrypt from 'bcryptjs';
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
+  // Without a cap, a bad DATABASE_URL (wrong host/port, blocked egress) hangs
+  // forever with no error — the host just looks like it never started.
+  connectionTimeoutMillis: 10000
 });
 
 // Runs fn(client) inside BEGIN/COMMIT, rolling back on error.
