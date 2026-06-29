@@ -1,0 +1,11 @@
+/* Sage Design System — root entry point
+   Link this single file in every consuming project.
+   All rules live in imported partials — never add inline rules here. */
+
+@import './tokens/fonts.css';
+@import './tokens/colors.css';
+@import './tokens/typography.css';
+@import './tokens/spacing.css';
+@import './tokens/radius.css';
+@import './tokens/shadows.css';
+@import './tokens/motion.css';

@@ -1,0 +1,23 @@
+{
+  "name": "sma-v08",
+  "version": "8.0.0",
+  "private": true,
+  "type": "module",
+  "description": "KOTEA (V08) - central hub API + display app, with separate offline-first POS and Expense satellite apps (React + Vite + Supabase Postgres)",
+  "scripts": {
+    "setup": "npm install && npm --prefix server install && npm --prefix client install",
+    "dev": "concurrently -n server,client -c green,cyan \"npm --prefix server run dev\" \"npm --prefix client run dev -- --host\"",
+    "server": "npm --prefix server run dev",
+    "client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "build:exe": "npm run build && pkg launcher.cjs --targets node22-win-x64 --output KOTEA.exe",
+    "build:pos-exe": "npm run build && pkg launcher.pos.cjs --targets node22-win-x64 --output KOTEA-POS.exe",
+    "build:expense-exe": "npm run build && pkg launcher.expense.cjs --targets node22-win-x64 --output KOTEA-Expense.exe",
+    "build:all-exe": "npm run build && pkg launcher.cjs --targets node22-win-x64 --output KOTEA.exe && pkg launcher.pos.cjs --targets node22-win-x64 --output KOTEA-POS.exe && pkg launcher.expense.cjs --targets node22-win-x64 --output KOTEA-Expense.exe",
+    "build:dev-exe": "pkg launcher.dev.cjs --targets node22-win-x64 --output KOTEA-DEV.exe"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.20.0",
+    "concurrently": "^9.1.0"
+  }
+}

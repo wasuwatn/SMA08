@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/sage-design-system-dfc06ca3-5237-48b9-a3d8-3b6c3b3051a8/tokens/fonts.css">
+  <link rel="stylesheet" href="_ds/sage-design-system-dfc06ca3-5237-48b9-a3d8-3b6c3b3051a8/tokens/colors.css">
+  <link rel="stylesheet" href="_ds/sage-design-system-dfc06ca3-5237-48b9-a3d8-3b6c3b3051a8/tokens/typography.css">
+  <link rel="stylesheet" href="_ds/sage-design-system-dfc06ca3-5237-48b9-a3d8-3b6c3b3051a8/tokens/spacing.css">
+  <link rel="stylesheet" href="_ds/sage-design-system-dfc06ca3-5237-48b9-a3d8-3b6c3b3051a8/tokens/radius.css">
+  <link rel="stylesheet" href="_ds/sage-design-system-dfc06ca3-5237-48b9-a3d8-3b6c3b3051a8/tokens/shadows.css">
+  <link rel="stylesheet" href="_ds/sage-design-system-dfc06ca3-5237-48b9-a3d8-3b6c3b3051a8/tokens/motion.css">
+  <link rel="stylesheet" href="_ds/sage-design-system-dfc06ca3-5237-48b9-a3d8-3b6c3b3051a8/styles.css">
+  <script src="_ds/sage-design-system-dfc06ca3-5237-48b9-a3d8-3b6c3b3051a8/_ds_bundle.js"></script>
+  <style>
+    *::-webkit-scrollbar { width: 6px; height: 6px; }
+    *::-webkit-scrollbar-thumb { background: var(--stone-300); border-radius: 999px; }
+    *::-webkit-scrollbar-track { background: transparent; }
+  </style>
+</helmet>
+
+<div style="min-width:100%;min-height:100vh;box-sizing:border-box;padding:48px;background:#e7e5df;width:max-content;font-family:var(--font-body);">
+
+  <div style="margin-bottom:34px;">
+    <div style="font-family:var(--font-display);font-size:38px;line-height:1;color:var(--olive-900);letter-spacing:-0.02em;">Sage Coffee — Point of sale</div>
+    <div style="font-size:12px;color:var(--fg-muted);margin-top:8px;letter-spacing:0.08em;text-transform:uppercase;">Adaptive register · three layouts + sales history · tap a drink to customise</div>
+  </div>
+
+  <div style="display:flex;gap:48px;align-items:flex-start;">
+
+    <!-- ========================= FRAME A : MOBILE MENU-FIRST ========================= -->
+    <div style="flex:none;width:390px;">
+      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:var(--stone-600);margin-bottom:12px;">A · Mobile — Menu-first, cart bar</div>
+      <div style="width:390px;height:812px;background:#15140f;border-radius:46px;padding:11px;box-shadow:0 24px 60px rgba(60,55,40,0.22);">
+        <div style="position:relative;width:100%;height:100%;background:var(--bg-canvas);border-radius:36px;overflow:hidden;display:flex;flex-direction:column;">
+
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 26px 4px;font-size:12px;font-weight:600;color:var(--olive-900);">
+            <span>9:41</span>
+            <span style="display:flex;gap:5px;align-items:center;font-size:11px;letter-spacing:0.04em;">● ● ● ▰</span>
+          </div>
+
+          <div style="padding:8px 16px 12px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+              <div>
+                <div style="font-family:var(--font-display);font-size:24px;line-height:1;color:var(--olive-900);">Sage Coffee</div>
+                <div style="font-family:var(--font-mono);font-size:11px;color:var(--fg-muted);margin-top:3px;">Register 02 · Clara</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <button onClick="{{ openHistory }}" title="Sales history" style="width:38px;height:38px;border-radius:50%;background:#fff;border:1px solid var(--border-default);color:var(--olive-700);display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.5V12l3 1.6"></path></svg></button>
+                <div style="width:38px;height:38px;border-radius:50%;background:var(--olive-100);color:var(--olive-700);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:16px;">CO</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:4px;background:var(--bg-muted);border-radius:10px;padding:4px;">
+              <sc-for list="{{ A_types }}" as="s" hint-placeholder-count="3">
+                <button onClick="{{ s.onClick }}" style="{{ s.style }}">{{ s.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px;overflow-x:auto;padding:0 16px 10px;flex:none;">
+            <sc-for list="{{ A_cats }}" as="c" hint-placeholder-count="4">
+              <button onClick="{{ c.onClick }}" style="{{ c.style }}">{{ c.name }}</button>
+            </sc-for>
+          </div>
+
+          <div style="flex:1;min-height:0;overflow-y:auto;padding:2px 16px 16px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+              <sc-for list="{{ A_products }}" as="p" hint-placeholder-count="6">
+                <button onClick="{{ p.onAdd }}" style="text-align:left;cursor:pointer;background:var(--surface-default);border:1px solid var(--border-default);border-radius:14px;padding:13px;display:flex;flex-direction:column;gap:10px;min-height:108px;justify-content:space-between;font-family:var(--font-body);">
+                  <div>
+                    <div style="font-size:14px;font-weight:500;color:var(--olive-900);line-height:1.25;">{{ p.name }}</div>
+                    <div style="font-size:11px;color:var(--fg-muted);margin-top:3px;">{{ p.desc }}</div>
+                  </div>
+                  <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <span style="font-family:var(--font-mono);font-size:13px;color:var(--olive-700);">{{ p.priceLabel }}</span>
+                    <span style="width:26px;height:26px;border-radius:50%;background:var(--olive-600);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;line-height:1;">+</span>
+                  </div>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid var(--border-default);background:#fff;padding:13px 16px 16px;display:flex;align-items:center;gap:12px;flex:none;">
+            <div style="flex:1;">
+              <div style="font-size:10px;color:var(--fg-muted);text-transform:uppercase;letter-spacing:0.08em;">{{ A_t.count }} items</div>
+              <div style="font-family:var(--font-display);font-size:24px;color:var(--olive-900);line-height:1.1;">{{ A_t.total }}</div>
+            </div>
+            <button onClick="{{ A_openSheet }}" style="background:var(--olive-600);color:#fff;border:none;border-radius:12px;padding:13px 18px;font-size:12px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;cursor:pointer;">Review order</button>
+          </div>
+
+          <sc-if value="{{ A_sheet }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;justify-content:flex-end;">
+              <div onClick="{{ A_closeSheet }}" style="position:absolute;inset:0;background:rgba(35,33,24,0.38);"></div>
+              <div style="position:relative;background:var(--bg-canvas);border-radius:28px 28px 36px 36px;max-height:90%;display:flex;flex-direction:column;box-shadow:0 -12px 40px rgba(0,0,0,0.22);">
+                <div style="padding:18px 18px 10px;display:flex;align-items:center;justify-content:space-between;flex:none;">
+                  <div style="font-family:var(--font-display);font-size:24px;color:var(--olive-900);">Your order</div>
+                  <button onClick="{{ A_closeSheet }}" style="width:30px;height:30px;border-radius:50%;border:1px solid var(--border-default);background:#fff;color:var(--fg-subtle);cursor:pointer;font-size:13px;">✕</button>
+                </div>
+                <div style="flex:1;min-height:0;overflow-y:auto;padding:0 18px 4px;">
+                  <div style="display:flex;gap:10px;margin-bottom:6px;">
+                    <div style="flex:1;">
+                      <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--fg-muted);margin-bottom:5px;">Customer</div>
+                      <input value="{{ A_m.name }}" onChange="{{ A_setName }}" placeholder="Name" style="width:100%;box-sizing:border-box;border:1px solid var(--border-default);border-radius:8px;padding:9px 11px;font-size:13px;font-family:var(--font-body);background:#fff;color:var(--olive-900);outline:none;"/>
+                    </div>
+                    <div style="width:120px;">
+                      <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--fg-muted);margin-bottom:5px;">Date</div>
+                      <input type="date" value="{{ A_m.date }}" onChange="{{ A_setDate }}" style="width:100%;box-sizing:border-box;border:1px solid var(--border-default);border-radius:8px;padding:9px 11px;font-size:13px;font-family:var(--font-body);background:#fff;color:var(--olive-900);outline:none;"/>
+                    </div>
+                  </div>
+                  <sc-if value="{{ A_m.isDelivery }}" hint-placeholder-val="{{ false }}">
+                    <div style="margin-bottom:8px;">
+                      <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--fg-muted);margin-bottom:5px;">Delivery address</div>
+                      <input value="{{ A_m.address }}" onChange="{{ A_setAddress }}" placeholder="Street, unit, city" style="width:100%;box-sizing:border-box;border:1px solid var(--border-default);border-radius:8px;padding:9px 11px;font-size:13px;font-family:var(--font-body);background:#fff;color:var(--olive-900);outline:none;"/>
+                    </div>
+                  </sc-if>
+                  <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--fg-muted);margin:10px 0 2px;">Items</div>
+                  <sc-if value="{{ A_t.empty }}" hint-placeholder-val="{{ false }}">
+                    <div style="padding:24px 0;text-align:center;color:var(--fg-muted);font-size:13px;">Nothing here yet. Tap a drink to start an order.</div>
+                  </sc-if>
+                  <sc-for list="{{ A_cart }}" as="l" hint-placeholder-count="2">
+                    <div style="display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--border-subtle);">
+                      <div style="flex:1;min-width:0;">
+                        <div style="font-size:13px;font-weight:500;color:var(--olive-900);">{{ l.name }}</div>
+                        <div style="font-size:11px;color:var(--fg-muted);margin-top:2px;line-height:1.4;">{{ l.meta }}</div>
+                        <div style="display:flex;align-items:center;gap:8px;margin-top:7px;">
+                          <button onClick="{{ l.onDec }}" style="width:24px;height:24px;border-radius:6px;border:1px solid var(--border-default);background:#fff;cursor:pointer;font-size:14px;color:var(--olive-700);display:flex;align-items:center;justify-content:center;line-height:1;">−</button>
+                          <span style="font-size:13px;min-width:16px;text-align:center;font-family:var(--font-mono);color:var(--olive-900);">{{ l.qty }}</span>
+                          <button onClick="{{ l.onInc }}" style="width:24px;height:24px;border-radius:6px;border:1px solid var(--border-default);background:#fff;cursor:pointer;font-size:14px;color:var(--olive-700);display:flex;align-items:center;justify-content:center;line-height:1;">+</button>
+                        </div>
+                      </div>
+                      <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:7px;">
+                        <span style="font-family:var(--font-mono);font-size:13px;color:var(--olive-800);">{{ l.priceLabel }}</span>
+                        <button onClick="{{ l.onRemove }}" style="background:none;border:none;color:var(--fg-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;cursor:pointer;padding:0;">Remove</button>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="padding:14px 18px 18px;border-top:1px solid var(--border-default);background:#fff;display:flex;flex-direction:column;gap:12px;flex:none;">
+                  <div style="display:flex;gap:8px;">
+                    <input value="{{ A_m.promoInput }}" onChange="{{ A_setPromo }}" placeholder="Code or amount — SAGE10 or 2.50" style="flex:1;min-width:0;border:1px solid var(--border-default);border-radius:8px;padding:9px 11px;font-size:13px;font-family:var(--font-body);background:#fff;color:var(--olive-900);outline:none;"/>
+                    <button onClick="{{ A_applyPromo }}" style="background:var(--olive-100);color:var(--olive-700);border:none;border-radius:8px;padding:0 16px;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;cursor:pointer;">Apply</button>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:6px;">
+                    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--fg-subtle);"><span>Subtotal</span><span style="font-family:var(--font-mono);">{{ A_t.subtotal }}</span></div>
+                    <sc-if value="{{ A_t.hasDiscount }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--sage-700);"><span>{{ A_t.discountLabel }}</span><span style="font-family:var(--font-mono);">{{ A_t.discount }}</span></div>
+                    </sc-if>
+                    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--fg-subtle);"><span>Tax 8%</span><span style="font-family:var(--font-mono);">{{ A_t.tax }}</span></div>
+                    <div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:9px;border-top:1px solid var(--border-default);margin-top:2px;">
+                      <span style="font-size:13px;font-weight:600;color:var(--olive-900);">Total</span>
+                      <span style="font-family:var(--font-display);font-size:26px;color:var(--olive-900);line-height:1;">{{ A_t.total }}</span>
+                    </div>
+                  </div>
+                  <x-import component-from-global-scope="SageDesignSystem_dfc06c.Button" variant="solid" size="lg" onClick="{{ A_checkout }}" hint-size="100%,46px" style="width:100%;">Charge order</x-import>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================= FRAME B : MOBILE SPLIT ========================= -->
+    <div style="flex:none;width:390px;">
+      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:var(--stone-600);margin-bottom:12px;">B · Mobile — Split menu &amp; cart</div>
+      <div style="width:390px;height:812px;background:#15140f;border-radius:46px;padding:11px;box-shadow:0 24px 60px rgba(60,55,40,0.22);">
+        <div style="position:relative;width:100%;height:100%;background:var(--bg-canvas);border-radius:36px;overflow:hidden;display:flex;flex-direction:column;">
+
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 26px 4px;font-size:12px;font-weight:600;color:var(--olive-900);">
+            <span>9:41</span>
+            <span style="font-size:11px;letter-spacing:0.04em;">● ● ● ▰</span>
+          </div>
+
+          <div style="padding:8px 16px 10px;display:flex;align-items:center;justify-content:space-between;">
+            <div style="font-family:var(--font-display);font-size:22px;color:var(--olive-900);">Sage Coffee</div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <button onClick="{{ openHistory }}" title="Sales history" style="width:34px;height:34px;border-radius:50%;background:#fff;border:1px solid var(--border-default);color:var(--olive-700);display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.5V12l3 1.6"></path></svg></button>
+              <div style="display:flex;gap:3px;background:var(--bg-muted);border-radius:9px;padding:3px;">
+                <sc-for list="{{ B_types }}" as="s" hint-placeholder-count="3">
+                  <button onClick="{{ s.onClick }}" style="{{ s.style }}">{{ s.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px;overflow-x:auto;padding:0 16px 10px;flex:none;">
+            <sc-for list="{{ B_cats }}" as="c" hint-placeholder-count="4">
+              <button onClick="{{ c.onClick }}" style="{{ c.style }}">{{ c.name }}</button>
+            </sc-for>
+          </div>
+
+          <div style="flex:1.25;min-height:0;overflow-y:auto;padding:0 16px 12px;">
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <sc-for list="{{ B_products }}" as="p" hint-placeholder-count="5">
+                <button onClick="{{ p.onAdd }}" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--surface-default);border:1px solid var(--border-subtle);border-radius:12px;padding:11px 12px;cursor:pointer;font-family:var(--font-body);">
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:14px;font-weight:500;color:var(--olive-900);">{{ p.name }}</div>
+                    <div style="font-size:11px;color:var(--fg-muted);margin-top:2px;">{{ p.desc }}</div>
+                  </div>
+                  <span style="font-family:var(--font-mono);font-size:13px;color:var(--olive-700);">{{ p.priceLabel }}</span>
+                  <span style="width:24px;height:24px;border-radius:50%;background:var(--olive-100);color:var(--olive-700);display:flex;align-items:center;justify-content:center;font-size:16px;line-height:1;flex:none;">+</span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="flex:1;min-height:0;background:#fff;border-top:1px solid var(--border-default);display:flex;flex-direction:column;border-radius:20px 20px 0 0;box-shadow:0 -6px 20px rgba(0,0,0,0.05);">
+            <div style="padding:13px 16px 8px;display:flex;align-items:center;gap:10px;flex:none;">
+              <div style="font-family:var(--font-display);font-size:19px;color:var(--olive-900);flex:none;">Order</div>
+              <span style="font-family:var(--font-mono);font-size:11px;color:var(--fg-muted);">{{ B_t.count }} items</span>
+              <input value="{{ B_m.name }}" onChange="{{ B_setName }}" placeholder="Customer name" style="flex:1;min-width:0;border:1px solid var(--border-default);border-radius:8px;padding:7px 10px;font-size:12px;font-family:var(--font-body);background:var(--bg-canvas);color:var(--olive-900);outline:none;"/>
+            </div>
+            <div style="flex:1;min-height:0;overflow-y:auto;padding:0 16px;">
+              <sc-if value="{{ B_t.empty }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:20px 0;text-align:center;color:var(--fg-muted);font-size:13px;">Nothing here yet. Tap a drink above.</div>
+              </sc-if>
+              <sc-for list="{{ B_cart }}" as="l" hint-placeholder-count="2">
+                <div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border-subtle);">
+                  <div style="display:flex;align-items:center;gap:6px;flex:none;">
+                    <button onClick="{{ l.onDec }}" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border-default);background:#fff;cursor:pointer;font-size:13px;color:var(--olive-700);display:flex;align-items:center;justify-content:center;line-height:1;">−</button>
+                    <span style="font-size:12px;min-width:14px;text-align:center;font-family:var(--font-mono);color:var(--olive-900);">{{ l.qty }}</span>
+                    <button onClick="{{ l.onInc }}" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border-default);background:#fff;cursor:pointer;font-size:13px;color:var(--olive-700);display:flex;align-items:center;justify-content:center;line-height:1;">+</button>
+                  </div>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:12px;font-weight:500;color:var(--olive-900);">{{ l.name }}</div>
+                    <div style="font-size:10px;color:var(--fg-muted);line-height:1.35;">{{ l.meta }}</div>
+                  </div>
+                  <span style="font-family:var(--font-mono);font-size:12px;color:var(--olive-800);">{{ l.priceLabel }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="padding:12px 16px 16px;border-top:1px solid var(--border-default);display:flex;align-items:center;gap:12px;flex:none;">
+              <div style="flex:1;">
+                <div style="font-size:10px;color:var(--fg-muted);text-transform:uppercase;letter-spacing:0.08em;">Total · incl. tax</div>
+                <div style="font-family:var(--font-display);font-size:23px;color:var(--olive-900);line-height:1.1;">{{ B_t.total }}</div>
+              </div>
+              <x-import component-from-global-scope="SageDesignSystem_dfc06c.Button" variant="solid" size="lg" onClick="{{ B_checkout }}" hint-size="auto,46px">Charge</x-import>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================= FRAME C : TABLET TWO-PANE ========================= -->
+    <div style="flex:none;width:1040px;">
+      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:var(--stone-600);margin-bottom:12px;">C · Tablet / Desktop — Two-pane register</div>
+      <div style="width:1040px;height:720px;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 24px 60px rgba(60,55,40,0.18);border:1px solid var(--border-default);display:flex;flex-direction:column;">
+
+        <div style="height:42px;flex:none;background:var(--stone-100);border-bottom:1px solid var(--border-default);display:flex;align-items:center;padding:0 18px;gap:8px;">
+          <span style="width:11px;height:11px;border-radius:50%;background:#e0726a;"></span>
+          <span style="width:11px;height:11px;border-radius:50%;background:#e6b35a;"></span>
+          <span style="width:11px;height:11px;border-radius:50%;background:#8fae6b;"></span>
+          <span style="flex:1;text-align:center;font-size:12px;color:var(--fg-muted);font-family:var(--font-mono);">Sage Coffee · Register 02</span>
+          <span style="font-size:12px;color:var(--fg-muted);font-family:var(--font-mono);">9:41</span>
+        </div>
+
+        <div style="flex:1;min-height:0;display:flex;">
+
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+            <div style="padding:20px 24px 14px;flex:none;">
+              <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:14px;">
+                <div>
+                  <div style="font-family:var(--font-display);font-size:28px;line-height:1;color:var(--olive-900);">Menu</div>
+                  <div style="font-family:var(--font-mono);font-size:11px;color:var(--fg-muted);margin-top:4px;">Single-origin coffee · seasonal menu</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <button onClick="{{ openHistory }}" style="display:flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--border-default);color:var(--olive-700);border-radius:999px;padding:8px 14px;font-size:11px;font-weight:500;letter-spacing:0.06em;text-transform:uppercase;cursor:pointer;font-family:var(--font-body);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.5V12l3 1.6"></path></svg>Sales history</button>
+                  <div style="display:flex;gap:4px;background:var(--bg-muted);border-radius:10px;padding:4px;">
+                    <sc-for list="{{ C_types }}" as="s" hint-placeholder-count="3">
+                      <button onClick="{{ s.onClick }}" style="{{ s.style }}">{{ s.label }}</button>
+                    </sc-for>
+                  </div>
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <sc-for list="{{ C_cats }}" as="c" hint-placeholder-count="4">
+                  <button onClick="{{ c.onClick }}" style="{{ c.style }}">{{ c.name }}</button>
+                </sc-for>
+              </div>
+            </div>
+            <div style="flex:1;min-height:0;overflow-y:auto;padding:2px 24px 24px;">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                <sc-for list="{{ C_products }}" as="p" hint-placeholder-count="6">
+                  <button onClick="{{ p.onAdd }}" style="text-align:left;cursor:pointer;background:var(--surface-default);border:1px solid var(--border-default);border-radius:14px;padding:15px;display:flex;flex-direction:column;gap:14px;min-height:118px;justify-content:space-between;font-family:var(--font-body);">
+                    <div>
+                      <div style="font-size:15px;font-weight:500;color:var(--olive-900);line-height:1.25;">{{ p.name }}</div>
+                      <div style="font-size:11px;color:var(--fg-muted);margin-top:3px;">{{ p.desc }}</div>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                      <span style="font-family:var(--font-mono);font-size:14px;color:var(--olive-700);">{{ p.priceLabel }}</span>
+                      <span style="width:28px;height:28px;border-radius:50%;background:var(--olive-600);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;line-height:1;">+</span>
+                    </div>
+                  </button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <div style="width:404px;flex:none;background:var(--bg-subtle);border-left:1px solid var(--border-default);display:flex;flex-direction:column;">
+            <div style="padding:20px 22px 12px;flex:none;">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;">
+                <div style="font-family:var(--font-display);font-size:24px;color:var(--olive-900);">Current order</div>
+                <span style="font-family:var(--font-mono);font-size:12px;color:var(--fg-muted);">{{ C_t.count }} items</span>
+              </div>
+              <div style="display:flex;gap:10px;">
+                <div style="flex:1;">
+                  <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--fg-muted);margin-bottom:5px;">Customer</div>
+                  <input value="{{ C_m.name }}" onChange="{{ C_setName }}" placeholder="Name" style="width:100%;box-sizing:border-box;border:1px solid var(--border-default);border-radius:8px;padding:9px 11px;font-size:13px;font-family:var(--font-body);background:#fff;color:var(--olive-900);outline:none;"/>
+                </div>
+                <div style="width:140px;">
+                  <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--fg-muted);margin-bottom:5px;">Date</div>
+                  <input type="date" value="{{ C_m.date }}" onChange="{{ C_setDate }}" style="width:100%;box-sizing:border-box;border:1px solid var(--border-default);border-radius:8px;padding:9px 11px;font-size:13px;font-family:var(--font-body);background:#fff;color:var(--olive-900);outline:none;"/>
+                </div>
+              </div>
+              <sc-if value="{{ C_m.isDelivery }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:10px;">
+                  <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--fg-muted);margin-bottom:5px;">Delivery address</div>
+                  <input value="{{ C_m.address }}" onChange="{{ C_setAddress }}" placeholder="Street, unit, city" style="width:100%;box-sizing:border-box;border:1px solid var(--border-default);border-radius:8px;padding:9px 11px;font-size:13px;font-family:var(--font-body);background:#fff;color:var(--olive-900);outline:none;"/>
+                </div>
+              </sc-if>
+            </div>
+
+            <div style="flex:1;min-height:0;overflow-y:auto;padding:4px 22px;">
+              <sc-if value="{{ C_t.empty }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:30px 0;text-align:center;color:var(--fg-muted);font-size:13px;">Nothing here yet. Add an item from the menu.</div>
+              </sc-if>
+              <sc-for list="{{ C_cart }}" as="l" hint-placeholder-count="3">
+                <div style="display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--border-subtle);">
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:14px;font-weight:500;color:var(--olive-900);">{{ l.name }}</div>
+                    <div style="font-size:11px;color:var(--fg-muted);margin-top:2px;line-height:1.4;">{{ l.meta }}</div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+                      <button onClick="{{ l.onDec }}" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border-default);background:#fff;cursor:pointer;font-size:15px;color:var(--olive-700);display:flex;align-items:center;justify-content:center;line-height:1;">−</button>
+                      <span style="font-size:13px;min-width:18px;text-align:center;font-family:var(--font-mono);color:var(--olive-900);">{{ l.qty }}</span>
+                      <button onClick="{{ l.onInc }}" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border-default);background:#fff;cursor:pointer;font-size:15px;color:var(--olive-700);display:flex;align-items:center;justify-content:center;line-height:1;">+</button>
+                    </div>
+                  </div>
+                  <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+                    <span style="font-family:var(--font-mono);font-size:14px;color:var(--olive-800);">{{ l.priceLabel }}</span>
+                    <button onClick="{{ l.onRemove }}" style="background:none;border:none;color:var(--fg-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;cursor:pointer;padding:0;">Remove</button>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="padding:14px 22px 20px;border-top:1px solid var(--border-default);background:#fff;display:flex;flex-direction:column;gap:12px;flex:none;">
+              <div style="display:flex;gap:8px;">
+                <input value="{{ C_m.promoInput }}" onChange="{{ C_setPromo }}" placeholder="Code or amount — SAGE10 or 2.50" style="flex:1;min-width:0;border:1px solid var(--border-default);border-radius:8px;padding:9px 11px;font-size:13px;font-family:var(--font-body);background:#fff;color:var(--olive-900);outline:none;"/>
+                <button onClick="{{ C_applyPromo }}" style="background:var(--olive-100);color:var(--olive-700);border:none;border-radius:8px;padding:0 16px;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;cursor:pointer;">Apply</button>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--fg-subtle);"><span>Subtotal</span><span style="font-family:var(--font-mono);">{{ C_t.subtotal }}</span></div>
+                <sc-if value="{{ C_t.hasDiscount }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--sage-700);"><span>{{ C_t.discountLabel }}</span><span style="font-family:var(--font-mono);">{{ C_t.discount }}</span></div>
+                </sc-if>
+                <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--fg-subtle);"><span>Tax 8%</span><span style="font-family:var(--font-mono);">{{ C_t.tax }}</span></div>
+                <div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:10px;border-top:1px solid var(--border-default);margin-top:2px;">
+                  <span style="font-size:14px;font-weight:600;color:var(--olive-900);">Total</span>
+                  <span style="font-family:var(--font-display);font-size:30px;color:var(--olive-900);line-height:1;">{{ C_t.total }}</span>
+                </div>
+              </div>
+              <x-import component-from-global-scope="SageDesignSystem_dfc06c.Button" variant="solid" size="lg" onClick="{{ C_checkout }}" hint-size="100%,48px" style="width:100%;">Charge {{ C_t.total }}</x-import>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================= FRAME D : SALES HISTORY ========================= -->
+    <div style="flex:none;width:760px;">
+      <div style="font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:var(--stone-600);margin-bottom:12px;">D · Sales history — order review</div>
+      <div style="width:760px;height:720px;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 24px 60px rgba(60,55,40,0.18);border:1px solid var(--border-default);display:flex;flex-direction:column;">
+
+        <div style="height:42px;flex:none;background:var(--stone-100);border-bottom:1px solid var(--border-default);display:flex;align-items:center;padding:0 18px;gap:8px;">
+          <span style="width:11px;height:11px;border-radius:50%;background:#e0726a;"></span>
+          <span style="width:11px;height:11px;border-radius:50%;background:#e6b35a;"></span>
+          <span style="width:11px;height:11px;border-radius:50%;background:#8fae6b;"></span>
+          <span style="flex:1;text-align:center;font-size:12px;color:var(--fg-muted);font-family:var(--font-mono);">Sales history · Today</span>
+          <span style="width:46px;"></span>
+        </div>
+
+        <div style="flex:1;min-height:0;display:flex;">
+
+          <div style="width:300px;flex:none;border-right:1px solid var(--border-default);display:flex;flex-direction:column;">
+            <div style="padding:18px 18px 14px;flex:none;border-bottom:1px solid var(--border-subtle);">
+              <div style="font-family:var(--font-display);font-size:24px;color:var(--olive-900);margin-bottom:14px;">Sales history</div>
+              <div style="display:flex;gap:14px;">
+                <div style="flex:1;">
+                  <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--fg-muted);">Sales</div>
+                  <div style="font-family:var(--font-display);font-size:21px;color:var(--olive-900);line-height:1.2;">{{ sales.total }}</div>
+                </div>
+                <div style="flex:none;">
+                  <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--fg-muted);">Orders</div>
+                  <div style="font-family:var(--font-display);font-size:21px;color:var(--olive-900);line-height:1.2;">{{ sales.count }}</div>
+                </div>
+                <div style="flex:none;">
+                  <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--fg-muted);">Avg</div>
+                  <div style="font-family:var(--font-display);font-size:21px;color:var(--olive-900);line-height:1.2;">{{ sales.avg }}</div>
+                </div>
+              </div>
+            </div>
+            <div style="flex:1;min-height:0;overflow-y:auto;padding:8px;">
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                <sc-for list="{{ orders }}" as="o" hint-placeholder-count="4">
+                  <button onClick="{{ o.onClick }}" style="{{ o.style }}">
+                    <div style="min-width:0;">
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-family:var(--font-mono);font-size:13px;color:var(--olive-800);">{{ o.id }}</span>
+                        <span style="font-size:11px;color:var(--fg-muted);">{{ o.time }}</span>
+                      </div>
+                      <div style="font-size:13px;color:var(--olive-900);font-weight:500;margin-top:2px;">{{ o.customer }}</div>
+                      <div style="font-size:11px;color:var(--fg-muted);margin-top:1px;">{{ o.type }} · {{ o.count }}</div>
+                    </div>
+                    <span style="font-family:var(--font-mono);font-size:13px;color:var(--olive-800);flex:none;">{{ o.total }}</span>
+                  </button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <div style="flex:1;min-width:0;background:var(--bg-subtle);display:flex;flex-direction:column;">
+            <div style="padding:20px 22px 14px;flex:none;border-bottom:1px solid var(--border-default);">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <div style="font-family:var(--font-display);font-size:26px;color:var(--olive-900);">Order {{ order.id }}</div>
+                <span style="font-family:var(--font-body);font-size:11px;font-weight:500;letter-spacing:0.04em;text-transform:uppercase;color:var(--olive-700);background:var(--olive-100);padding:5px 11px;border-radius:999px;">{{ order.type }}</span>
+              </div>
+              <div style="font-size:12px;color:var(--fg-muted);margin-top:6px;font-family:var(--font-mono);">{{ order.customer }} · {{ order.date }} · {{ order.time }}</div>
+            </div>
+            <div style="flex:1;min-height:0;overflow-y:auto;padding:6px 22px;">
+              <sc-for list="{{ order.lines }}" as="ln" hint-placeholder-count="2">
+                <div style="display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--border-subtle);">
+                  <span style="font-family:var(--font-mono);font-size:13px;color:var(--olive-700);min-width:24px;">{{ ln.qty }}×</span>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:14px;font-weight:500;color:var(--olive-900);">{{ ln.name }}</div>
+                    <div style="font-size:11px;color:var(--fg-muted);margin-top:2px;line-height:1.4;">{{ ln.meta }}</div>
+                  </div>
+                  <span style="font-family:var(--font-mono);font-size:13px;color:var(--olive-800);">{{ ln.amount }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="padding:14px 22px 20px;border-top:1px solid var(--border-default);background:#fff;display:flex;flex-direction:column;gap:6px;flex:none;">
+              <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--fg-subtle);"><span>Subtotal</span><span style="font-family:var(--font-mono);">{{ order.subtotal }}</span></div>
+              <sc-if value="{{ order.hasDiscount }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--sage-700);"><span>{{ order.discountLabel }}</span><span style="font-family:var(--font-mono);">{{ order.discount }}</span></div>
+              </sc-if>
+              <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--fg-subtle);"><span>Tax 8%</span><span style="font-family:var(--font-mono);">{{ order.tax }}</span></div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:10px;border-top:1px solid var(--border-default);margin-top:2px;">
+                <span style="font-size:14px;font-weight:600;color:var(--olive-900);">Total</span>
+                <span style="font-family:var(--font-display);font-size:28px;color:var(--olive-900);line-height:1;">{{ order.total }}</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ========================= SHARED SALES-HISTORY OVERLAY ========================= -->
+  <sc-if value="{{ historyOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;padding:24px;">
+      <div onClick="{{ closeHistory }}" style="position:absolute;inset:0;background:rgba(35,33,24,0.46);backdrop-filter:blur(3px);"></div>
+      <div style="position:relative;width:840px;max-width:94vw;height:620px;max-height:90vh;background:var(--surface-default);border-radius:18px;box-shadow:var(--shadow-xl);overflow:hidden;display:flex;flex-direction:column;font-family:var(--font-body);">
+        <div style="padding:15px 20px;flex:none;border-bottom:1px solid var(--border-default);display:flex;align-items:center;justify-content:space-between;background:var(--stone-100);">
+          <div style="display:flex;align-items:baseline;gap:12px;">
+            <span style="font-family:var(--font-display);font-size:23px;color:var(--olive-900);">Sales history</span>
+            <span style="font-family:var(--font-mono);font-size:11px;color:var(--fg-muted);">Today · {{ sales.count }} orders · {{ sales.total }}</span>
+          </div>
+          <button onClick="{{ closeHistory }}" style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border-default);background:#fff;color:var(--fg-subtle);cursor:pointer;font-size:14px;">✕</button>
+        </div>
+        <div style="flex:1;min-height:0;display:flex;">
+          <div style="width:300px;flex:none;border-right:1px solid var(--border-default);overflow-y:auto;padding:8px;">
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              <sc-for list="{{ orders }}" as="o" hint-placeholder-count="4">
+                <button onClick="{{ o.onClick }}" style="{{ o.style }}">
+                  <div style="min-width:0;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                      <span style="font-family:var(--font-mono);font-size:13px;color:var(--olive-800);">{{ o.id }}</span>
+                      <span style="font-size:11px;color:var(--fg-muted);">{{ o.time }}</span>
+                    </div>
+                    <div style="font-size:13px;color:var(--olive-900);font-weight:500;margin-top:2px;">{{ o.customer }}</div>
+                    <div style="font-size:11px;color:var(--fg-muted);margin-top:1px;">{{ o.type }} · {{ o.count }}</div>
+                  </div>
+                  <span style="font-family:var(--font-mono);font-size:13px;color:var(--olive-800);flex:none;">{{ o.total }}</span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+          <div style="flex:1;min-width:0;background:var(--bg-subtle);display:flex;flex-direction:column;">
+            <div style="padding:20px 22px 14px;flex:none;border-bottom:1px solid var(--border-default);">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <div style="font-family:var(--font-display);font-size:26px;color:var(--olive-900);">Order {{ order.id }}</div>
+                <span style="font-family:var(--font-body);font-size:11px;font-weight:500;letter-spacing:0.04em;text-transform:uppercase;color:var(--olive-700);background:var(--olive-100);padding:5px 11px;border-radius:999px;">{{ order.type }}</span>
+              </div>
+              <div style="font-size:12px;color:var(--fg-muted);margin-top:6px;font-family:var(--font-mono);">{{ order.customer }} · {{ order.date }} · {{ order.time }}</div>
+            </div>
+            <div style="flex:1;min-height:0;overflow-y:auto;padding:6px 22px;">
+              <sc-for list="{{ order.lines }}" as="ln" hint-placeholder-count="2">
+                <div style="display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--border-subtle);">
+                  <span style="font-family:var(--font-mono);font-size:13px;color:var(--olive-700);min-width:24px;">{{ ln.qty }}×</span>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:14px;font-weight:500;color:var(--olive-900);">{{ ln.name }}</div>
+                    <div style="font-size:11px;color:var(--fg-muted);margin-top:2px;line-height:1.4;">{{ ln.meta }}</div>
+                  </div>
+                  <span style="font-family:var(--font-mono);font-size:13px;color:var(--olive-800);">{{ ln.amount }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="padding:14px 22px 20px;border-top:1px solid var(--border-default);background:#fff;display:flex;flex-direction:column;gap:6px;flex:none;">
+              <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--fg-subtle);"><span>Subtotal</span><span style="font-family:var(--font-mono);">{{ order.subtotal }}</span></div>
+              <sc-if value="{{ order.hasDiscount }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--sage-700);"><span>{{ order.discountLabel }}</span><span style="font-family:var(--font-mono);">{{ order.discount }}</span></div>
+              </sc-if>
+              <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--fg-subtle);"><span>Tax 8%</span><span style="font-family:var(--font-mono);">{{ order.tax }}</span></div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:10px;border-top:1px solid var(--border-default);margin-top:2px;">
+                <span style="font-size:14px;font-weight:600;color:var(--olive-900);">Total</span>
+                <span style="font-family:var(--font-display);font-size:28px;color:var(--olive-900);line-height:1;">{{ order.total }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ========================= SHARED CUSTOMISATION MODAL ========================= -->
+  <sc-if value="{{ hasModal }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px;">
+      <div onClick="{{ modal.onClose }}" style="position:absolute;inset:0;background:rgba(35,33,24,0.46);backdrop-filter:blur(3px);"></div>
+      <div style="position:relative;width:392px;max-height:88vh;overflow-y:auto;background:var(--surface-default);border-radius:18px;box-shadow:var(--shadow-xl);padding:24px;font-family:var(--font-body);">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px;">
+          <div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--olive-500);margin-bottom:4px;">Customise</div>
+            <div style="font-family:var(--font-display);font-size:28px;line-height:1;color:var(--olive-900);">{{ modal.name }}</div>
+          </div>
+          <button onClick="{{ modal.onClose }}" style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border-default);background:#fff;color:var(--fg-subtle);cursor:pointer;font-size:14px;flex:none;">✕</button>
+        </div>
+
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--fg-muted);margin:18px 0 8px;">Size</div>
+        <div style="display:flex;gap:8px;">
+          <sc-for list="{{ modal.sizeOpts }}" as="o" hint-placeholder-count="3">
+            <button onClick="{{ o.onClick }}" style="{{ o.style }}">
+              <span style="font-size:13px;font-weight:500;">{{ o.label }}</span>
+              <span style="font-size:10px;opacity:0.7;">{{ o.priceLabel }}</span>
+            </button>
+          </sc-for>
+        </div>
+
+        <sc-if value="{{ modal.hasOrigin }}" hint-placeholder-val="{{ false }}">
+          <div>
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--fg-muted);margin:18px 0 8px;">Bean origin</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <sc-for list="{{ modal.origins }}" as="o" hint-placeholder-count="4">
+                <button onClick="{{ o.onClick }}" style="{{ o.style }}">{{ o.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--fg-muted);margin:18px 0 8px;">Sweetness</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <sc-for list="{{ modal.sweetOpts }}" as="o" hint-placeholder-count="5">
+            <button onClick="{{ o.onClick }}" style="{{ o.style }}">{{ o.label }}</button>
+          </sc-for>
+        </div>
+
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--fg-muted);margin:18px 0 8px;">Add-ons</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <sc-for list="{{ modal.addonOpts }}" as="o" hint-placeholder-count="4">
+            <button onClick="{{ o.onClick }}" style="{{ o.style }}">
+              <span>{{ o.label }}</span>
+              <span style="font-family:var(--font-mono);font-size:12px;opacity:0.85;">{{ o.priceLabel }}</span>
+            </button>
+          </sc-for>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px;">
+          <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--fg-muted);">Quantity</span>
+          <div style="display:flex;align-items:center;gap:14px;">
+            <button onClick="{{ modal.decQty }}" style="width:32px;height:32px;border-radius:8px;border:1px solid var(--border-default);background:#fff;cursor:pointer;font-size:17px;color:var(--olive-700);display:flex;align-items:center;justify-content:center;line-height:1;">−</button>
+            <span style="font-size:17px;min-width:22px;text-align:center;font-family:var(--font-mono);color:var(--olive-900);">{{ modal.qty }}</span>
+            <button onClick="{{ modal.incQty }}" style="width:32px;height:32px;border-radius:8px;border:1px solid var(--border-default);background:#fff;cursor:pointer;font-size:17px;color:var(--olive-700);display:flex;align-items:center;justify-content:center;line-height:1;">+</button>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:14px;margin-top:22px;padding-top:18px;border-top:1px solid var(--border-default);">
+          <div style="flex:1;">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--fg-muted);">Total</div>
+            <div style="font-family:var(--font-display);font-size:28px;color:var(--olive-900);line-height:1.05;">{{ modal.priceLabel }}</div>
+          </div>
+          <x-import component-from-global-scope="SageDesignSystem_dfc06c.Button" variant="solid" size="lg" onClick="{{ modal.onConfirm }}" hint-size="auto,46px">Add to order</x-import>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ========================= TOAST ========================= -->
+  <sc-if value="{{ hasToast }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;left:50%;bottom:40px;transform:translateX(-50%);z-index:80;background:var(--olive-800);color:#fff;padding:14px 22px;border-radius:12px;box-shadow:var(--shadow-xl);font-size:14px;display:flex;align-items:center;gap:10px;">
+      <span style="width:22px;height:22px;border-radius:50%;background:var(--sage-400);color:var(--olive-900);display:flex;align-items:center;justify-content:center;font-size:13px;">✓</span>
+      {{ toast }}
+    </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  uid = 1;
+  orderNo = 1043;
+
+  sizes = [
+    { id: 'S', label: 'Small', delta: -0.40 },
+    { id: 'M', label: 'Medium', delta: 0 },
+    { id: 'L', label: 'Large', delta: 0.60 },
+  ];
+  sweetLevels = [0, 25, 50, 75, 100];
+  addonsList = [
+    { id: 'shot', name: 'Extra shot', price: 0.80 },
+    { id: 'oat', name: 'Oat milk', price: 0.60 },
+    { id: 'van', name: 'Vanilla syrup', price: 0.50 },
+    { id: 'car', name: 'Caramel', price: 0.50 },
+    { id: 'whip', name: 'Whipped cream', price: 0.40 },
+  ];
+  origins = ['House blend', 'Colombia', 'Brazil', 'Ethiopia'];
+  orderTypes = [
+    { id: 'dine-in', label: 'Dine-in' },
+    { id: 'takeaway', label: 'Takeaway' },
+    { id: 'delivery', label: 'Delivery' },
+  ];
+  menu = [
+    { id: 'coffee', name: 'Coffee', items: [
+      { id: 'esp', name: 'Espresso', price: 2.80, desc: 'Single origin', custom: true, hasOrigin: true },
+      { id: 'ame', name: 'Americano', price: 3.00, desc: 'Single origin', custom: true, hasOrigin: true },
+      { id: 'lat', name: 'Latte', price: 3.80, desc: 'Single origin', custom: true, hasOrigin: true },
+      { id: 'cap', name: 'Cappuccino', price: 3.60, desc: 'Single origin', custom: true, hasOrigin: true },
+      { id: 'flw', name: 'Flat white', price: 3.80, desc: 'Single origin', custom: true, hasOrigin: true },
+      { id: 'moc', name: 'Mocha', price: 4.20, desc: 'Single origin', custom: true, hasOrigin: true },
+    ]},
+    { id: 'tea', name: 'Tea', items: [
+      { id: 'grn', name: 'Green tea', price: 3.00, desc: 'Loose leaf', custom: true, hasOrigin: false },
+      { id: 'chai', name: 'Chai latte', price: 3.80, desc: 'Spiced', custom: true, hasOrigin: false },
+      { id: 'mat', name: 'Matcha', price: 4.20, desc: 'Ceremonial grade', custom: true, hasOrigin: false },
+      { id: 'erl', name: 'Earl grey', price: 3.00, desc: 'Bergamot', custom: true, hasOrigin: false },
+    ]},
+    { id: 'cold', name: 'Cold brew', items: [
+      { id: 'icl', name: 'Iced latte', price: 4.00, desc: 'Single origin', custom: true, hasOrigin: true },
+      { id: 'cb', name: 'Cold brew', price: 4.20, desc: '18-hour steep', custom: true, hasOrigin: true },
+      { id: 'fra', name: 'Frappe', price: 4.80, desc: 'Blended', custom: true, hasOrigin: false },
+      { id: 'icm', name: 'Iced matcha', price: 4.40, desc: 'Ceremonial grade', custom: true, hasOrigin: false },
+    ]},
+    { id: 'pastry', name: 'Pastry', items: [
+      { id: 'cro', name: 'Croissant', price: 2.50, desc: 'Fresh today', custom: false },
+      { id: 'muf', name: 'Blueberry muffin', price: 2.80, desc: 'Fresh today', custom: false },
+      { id: 'coo', name: 'Cookie', price: 1.80, desc: 'Fresh today', custom: false },
+      { id: 'ban', name: 'Banana bread', price: 3.20, desc: 'Fresh today', custom: false },
+    ]},
+  ];
+
+  state = {
+    modal: null,
+    sheetA: false,
+    toast: '',
+    historyOpen: false,
+    orders: this.seedOrders(),
+    selectedOrderId: '#1042',
+    data: {
+      A: { cat: 'coffee', type: 'takeaway', name: '', date: '2026-06-20', address: '', promoInput: '', disc: { kind: 'none' },
+        cart: [ this.mk('lat', 'M', 50, ['oat'], 'Colombia', 1), this.mk('cro', null, null, [], null, 2) ] },
+      B: { cat: 'coffee', type: 'dine-in', name: 'Table 4', date: '2026-06-20', address: '', promoInput: '', disc: { kind: 'none' },
+        cart: [ this.mk('cap', 'M', 25, [], 'Brazil', 1), this.mk('icl', 'L', 50, ['oat'], 'Ethiopia', 1) ] },
+      C: { cat: 'coffee', type: 'dine-in', name: '', date: '2026-06-20', address: '', promoInput: '', disc: { kind: 'none' },
+        cart: [ this.mk('lat', 'L', 50, ['shot', 'oat'], 'Colombia', 1), this.mk('mat', 'M', 75, [], null, 1), this.mk('muf', null, null, [], null, 1) ] },
+    },
+  };
+
+  // ---------- data helpers ----------
+  m(n) { return '$' + n.toFixed(2); }
+
+  findItem(id) {
+    for (const cat of this.menu) {
+      const it = cat.items.find(i => i.id === id);
+      if (it) return it;
+    }
+    return null;
+  }
+
+  mk(itemId, size, sweet, addonIds, origin, qty) {
+    const it = this.findItem(itemId);
+    const delta = size ? this.sizes.find(s => s.id === size).delta : 0;
+    const addons = (addonIds || []).map(id => this.addonsList.find(a => a.id === id));
+    return { key: 'k' + (this.uid++), itemId, name: it.name, base: it.price, size, sizeDelta: delta, sweet, addons, origin, qty };
+  }
+
+  unit(l) { return l.base + l.sizeDelta + l.addons.reduce((s, a) => s + a.price, 0); }
+
+  sig(l) {
+    return [l.itemId, l.size, l.sweet, l.addons.map(a => a.id).sort().join('+'), l.origin].join('|');
+  }
+
+  meta(l) {
+    const p = [];
+    if (l.size) p.push(this.sizes.find(s => s.id === l.size).label);
+    if (l.sweet != null) p.push(l.sweet + '% sweet');
+    if (l.origin) p.push(l.origin);
+    if (l.addons.length) p.push(l.addons.map(a => a.name).join(', '));
+    return p.join('  ·  ');
+  }
+
+  // ---------- state mutation ----------
+  setFrame(f, patch) {
+    this.setState(s => ({ data: { ...s.data, [f]: { ...s.data[f], ...patch } } }));
+  }
+
+  setCart(f, cart) { this.setFrame(f, { cart }); }
+
+  addLine(f, line) {
+    const cart = [...this.state.data[f].cart];
+    const idx = cart.findIndex(l => this.sig(l) === this.sig(line));
+    if (idx >= 0) cart[idx] = { ...cart[idx], qty: cart[idx].qty + line.qty };
+    else cart.push(line);
+    this.setCart(f, cart);
+  }
+
+  addProduct(f, id) {
+    const it = this.findItem(id);
+    if (it.custom) { this.openModal(f, it); return; }
+    this.addLine(f, this.mk(id, null, null, [], null, 1));
+  }
+
+  incLine(f, key) {
+    this.setCart(f, this.state.data[f].cart.map(l => l.key === key ? { ...l, qty: l.qty + 1 } : l));
+  }
+  decLine(f, key) {
+    this.setCart(f, this.state.data[f].cart.flatMap(l => {
+      if (l.key !== key) return [l];
+      return l.qty <= 1 ? [] : [{ ...l, qty: l.qty - 1 }];
+    }));
+  }
+  removeLine(f, key) {
+    this.setCart(f, this.state.data[f].cart.filter(l => l.key !== key));
+  }
+
+  applyPromo(f) {
+    const raw = (this.state.data[f].promoInput || '').trim();
+    if (!raw) { this.setFrame(f, { disc: { kind: 'none' } }); return; }
+    if (/^sage10$/i.test(raw)) { this.setFrame(f, { disc: { kind: 'pct', value: 0.10, label: 'Promo SAGE10 (10%)' } }); return; }
+    const num = parseFloat(raw.replace(/[^0-9.]/g, ''));
+    if (!isNaN(num) && num > 0) { this.setFrame(f, { disc: { kind: 'amt', value: num, label: 'Discount ' + this.m(num) } }); return; }
+    this.setFrame(f, { disc: { kind: 'none' } });
+  }
+
+  fmtTime(dt) {
+    return String(dt.getHours()).padStart(2, '0') + ':' + String(dt.getMinutes()).padStart(2, '0');
+  }
+
+  snapshot(f) {
+    const d = this.state.data[f];
+    const lines = d.cart.map(l => ({ name: l.name, qty: l.qty, meta: this.meta(l), amount: this.m(this.unit(l) * l.qty) }));
+    const sub = d.cart.reduce((s, l) => s + this.unit(l) * l.qty, 0);
+    const count = d.cart.reduce((s, l) => s + l.qty, 0);
+    const dc = d.disc || { kind: 'none' };
+    let discN = 0, label = '';
+    if (dc.kind === 'pct') { discN = sub * dc.value; label = dc.label; }
+    else if (dc.kind === 'amt') { discN = Math.min(dc.value, sub); label = dc.label; }
+    const after = sub - discN;
+    const taxN = after * 0.08;
+    const totalN = after + taxN;
+    return {
+      id: '#' + (this.orderNo++), time: this.fmtTime(new Date()), date: d.date,
+      customer: (d.name || '').trim() || 'Walk-in', type: this.orderTypes.find(x => x.id === d.type).label,
+      lines, count, subtotal: this.m(sub),
+      hasDiscount: discN > 0, discountLabel: label, discount: '−' + this.m(discN),
+      tax: this.m(taxN), total: this.m(totalN), totalN,
+    };
+  }
+
+  checkout(f) {
+    const d = this.state.data[f];
+    if (d.cart.length === 0) return;
+    const order = this.snapshot(f);
+    this.setState(s => ({
+      orders: [order, ...s.orders],
+      selectedOrderId: order.id,
+      sheetA: false,
+      toast: 'Order ' + order.id + ' recorded — ' + order.total,
+      data: { ...s.data, [f]: { ...s.data[f], cart: [], name: '', address: '', promoInput: '', disc: { kind: 'none' } } },
+    }));
+    clearTimeout(this._toastT);
+    this._toastT = setTimeout(() => this.setState({ toast: '' }), 2600);
+  }
+
+  seedOrders() {
+    return [
+      { id: '#1042', time: '09:24', date: '2026-06-20', customer: 'Mara O.', type: 'Takeaway',
+        lines: [ { name: 'Flat white', qty: 1, meta: 'Medium · 50% sweet · Colombia', amount: '$3.80' }, { name: 'Croissant', qty: 1, meta: '', amount: '$2.50' } ],
+        count: 2, subtotal: '$6.30', hasDiscount: false, discountLabel: '', discount: '−$0.00', tax: '$0.50', total: '$6.80', totalN: 6.80 },
+      { id: '#1041', time: '09:05', date: '2026-06-20', customer: 'Table 2', type: 'Dine-in',
+        lines: [ { name: 'Cappuccino', qty: 2, meta: 'Medium · 25% sweet · Brazil', amount: '$7.20' }, { name: 'Banana bread', qty: 1, meta: '', amount: '$3.20' } ],
+        count: 3, subtotal: '$10.40', hasDiscount: true, discountLabel: 'Promo SAGE10 (10%)', discount: '−$1.04', tax: '$0.75', total: '$10.11', totalN: 10.11 },
+      { id: '#1040', time: '08:46', date: '2026-06-20', customer: 'Devin', type: 'Delivery',
+        lines: [ { name: 'Iced latte', qty: 1, meta: 'Large · 50% sweet · Ethiopia · Oat milk', amount: '$4.60' }, { name: 'Cookie', qty: 2, meta: '', amount: '$3.60' } ],
+        count: 3, subtotal: '$8.20', hasDiscount: true, discountLabel: 'Discount $1.00', discount: '−$1.00', tax: '$0.58', total: '$7.78', totalN: 7.78 },
+    ];
+  }
+
+  salesSummary() {
+    const tot = this.state.orders.reduce((s, o) => s + o.totalN, 0);
+    const n = this.state.orders.length;
+    return { total: this.m(tot), count: String(n), avg: this.m(n ? tot / n : 0) };
+  }
+
+  ordersVM() {
+    const sel = this.state.selectedOrderId;
+    return this.state.orders.map(o => ({
+      id: o.id, time: o.time, customer: o.customer, type: o.type,
+      count: o.count + (o.count === 1 ? ' item' : ' items'), total: o.total,
+      onClick: () => this.setState({ selectedOrderId: o.id }),
+      style: {
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px',
+        width: '100%', textAlign: 'left', padding: '11px 12px', borderRadius: '10px',
+        cursor: 'pointer', fontFamily: 'var(--font-body)', border: '1px solid',
+        ...(o.id === sel
+          ? { background: 'var(--olive-50)', borderColor: 'var(--olive-300)' }
+          : { background: '#fff', borderColor: 'var(--border-subtle)' }),
+      },
+    }));
+  }
+
+  selectedOrder() {
+    const o = this.state.orders.find(x => x.id === this.state.selectedOrderId) || this.state.orders[0];
+    return o || { id: '—', customer: '', type: '', date: '', time: '', lines: [],
+      subtotal: '$0.00', hasDiscount: false, discountLabel: '', discount: '', tax: '$0.00', total: '$0.00' };
+  }
+
+  // ---------- modal ----------
+  openModal(f, it) {
+    this.setState({ modal: { frame: f, item: it, size: 'M', sweet: 50, addons: [], origin: it.hasOrigin ? 'House blend' : null, qty: 1 } });
+  }
+  patchModal(patch) { this.setState(s => ({ modal: { ...s.modal, ...patch } })); }
+  closeModal() { this.setState({ modal: null }); }
+  toggleAddon(id) {
+    const cur = this.state.modal.addons;
+    this.patchModal({ addons: cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id] });
+  }
+  confirmModal() {
+    const md = this.state.modal;
+    const line = this.mk(md.item.id, md.size, md.sweet, md.addons, md.origin, md.qty);
+    this.setState(s => {
+      const cart = [...s.data[md.frame].cart];
+      const idx = cart.findIndex(l => this.sig(l) === this.sig(line));
+      if (idx >= 0) cart[idx] = { ...cart[idx], qty: cart[idx].qty + line.qty };
+      else cart.push(line);
+      return { data: { ...s.data, [md.frame]: { ...s.data[md.frame], cart } }, modal: null };
+    });
+  }
+
+  // ---------- view models ----------
+  catChips(f) {
+    const active = this.state.data[f].cat;
+    return this.menu.map(cat => ({
+      name: cat.name,
+      onClick: () => this.setFrame(f, { cat: cat.id }),
+      style: {
+        flex: 'none', padding: '8px 15px', borderRadius: '999px', fontSize: '13px', fontWeight: 500,
+        cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'var(--font-body)',
+        border: '1px solid',
+        ...(active === cat.id
+          ? { background: 'var(--olive-600)', color: '#fff', borderColor: 'var(--olive-600)' }
+          : { background: 'var(--surface-default)', color: 'var(--fg-subtle)', borderColor: 'var(--border-default)' }),
+      },
+    }));
+  }
+
+  typeSegs(f) {
+    const active = this.state.data[f].type;
+    return this.orderTypes.map(t => ({
+      label: t.label,
+      onClick: () => this.setFrame(f, { type: t.id }),
+      style: {
+        flex: 1, textAlign: 'center', padding: '7px 9px', borderRadius: '8px', fontSize: '12px',
+        fontWeight: 500, letterSpacing: '0.02em', cursor: 'pointer',
+        border: 'none', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap',
+        ...(active === t.id
+          ? { background: '#fff', color: 'var(--olive-800)', boxShadow: 'var(--shadow-xs)' }
+          : { background: 'transparent', color: 'var(--fg-muted)' }),
+      },
+    }));
+  }
+
+  products(f) {
+    const cat = this.menu.find(c => c.id === this.state.data[f].cat) || this.menu[0];
+    return cat.items.map(it => ({
+      name: it.name, desc: it.desc, priceLabel: this.m(it.price),
+      onAdd: () => this.addProduct(f, it.id),
+    }));
+  }
+
+  cartLines(f) {
+    return this.state.data[f].cart.map(l => ({
+      name: l.name, meta: this.meta(l), qty: l.qty,
+      priceLabel: this.m(this.unit(l) * l.qty),
+      onInc: () => this.incLine(f, l.key),
+      onDec: () => this.decLine(f, l.key),
+      onRemove: () => this.removeLine(f, l.key),
+    }));
+  }
+
+  totals(f) {
+    const d = this.state.data[f];
+    const sub = d.cart.reduce((s, l) => s + this.unit(l) * l.qty, 0);
+    const count = d.cart.reduce((s, l) => s + l.qty, 0);
+    const dc = d.disc || { kind: 'none' };
+    let disc = 0, label = '';
+    if (dc.kind === 'pct') { disc = sub * dc.value; label = dc.label; }
+    else if (dc.kind === 'amt') { disc = Math.min(dc.value, sub); label = dc.label; }
+    const after = sub - disc;
+    const tax = after * 0.08;
+    return {
+      count, empty: count === 0,
+      subtotal: this.m(sub),
+      hasDiscount: disc > 0,
+      discountLabel: label,
+      discount: '−' + this.m(disc),
+      tax: this.m(tax),
+      total: this.m(after + tax),
+    };
+  }
+
+  modalVM() {
+    const md = this.state.modal;
+    if (!md) return null;
+    const it = md.item;
+    const pill = (active) => ({
+      padding: '8px 13px', borderRadius: '999px', fontSize: '12px', cursor: 'pointer',
+      fontFamily: 'var(--font-body)', border: '1px solid',
+      ...(active
+        ? { background: 'var(--olive-600)', color: '#fff', borderColor: 'var(--olive-600)' }
+        : { background: '#fff', color: 'var(--fg-subtle)', borderColor: 'var(--border-default)' }),
+    });
+    const sizeOpts = this.sizes.map(s => ({
+      label: s.label,
+      priceLabel: s.delta === 0 ? '' : (s.delta > 0 ? '+' + this.m(s.delta) : '−' + this.m(Math.abs(s.delta))),
+      onClick: () => this.patchModal({ size: s.id }),
+      style: {
+        flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
+        padding: '11px 6px', borderRadius: '10px', cursor: 'pointer', border: '1px solid',
+        ...(md.size === s.id
+          ? { borderColor: 'var(--olive-600)', background: 'var(--olive-50)', color: 'var(--olive-800)' }
+          : { borderColor: 'var(--border-default)', background: '#fff', color: 'var(--fg-subtle)' }),
+      },
+    }));
+    const sweetOpts = this.sweetLevels.map(v => ({
+      label: v + '%', onClick: () => this.patchModal({ sweet: v }), style: pill(md.sweet === v),
+    }));
+    const addonOpts = this.addonsList.map(a => ({
+      label: a.name, priceLabel: '+' + this.m(a.price),
+      onClick: () => this.toggleAddon(a.id),
+      style: {
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%',
+        padding: '11px 13px', borderRadius: '10px', cursor: 'pointer', fontSize: '13px',
+        fontFamily: 'var(--font-body)', border: '1px solid',
+        ...(md.addons.includes(a.id)
+          ? { borderColor: 'var(--olive-600)', background: 'var(--olive-50)', color: 'var(--olive-800)' }
+          : { borderColor: 'var(--border-default)', background: '#fff', color: 'var(--olive-900)' }),
+      },
+    }));
+    const origins = it.hasOrigin ? this.origins.map(o => ({
+      label: o, onClick: () => this.patchModal({ origin: o }), style: pill(md.origin === o),
+    })) : null;
+    const live = (it.price + this.sizes.find(s => s.id === md.size).delta
+      + md.addons.reduce((s, id) => s + this.addonsList.find(a => a.id === id).price, 0)) * md.qty;
+    return {
+      name: it.name, hasOrigin: it.hasOrigin, sizeOpts, sweetOpts, addonOpts, origins,
+      qty: md.qty, priceLabel: this.m(live),
+      incQty: () => this.patchModal({ qty: md.qty + 1 }),
+      decQty: () => this.patchModal({ qty: Math.max(1, md.qty - 1) }),
+      onConfirm: () => this.confirmModal(),
+      onClose: () => this.closeModal(),
+    };
+  }
+
+  renderVals() {
+    const v = {};
+    ['A', 'B', 'C'].forEach(f => {
+      const d = this.state.data[f];
+      v[f + '_cats'] = this.catChips(f);
+      v[f + '_types'] = this.typeSegs(f);
+      v[f + '_products'] = this.products(f);
+      v[f + '_cart'] = this.cartLines(f);
+      v[f + '_t'] = this.totals(f);
+      v[f + '_m'] = { name: d.name, date: d.date, address: d.address, isDelivery: d.type === 'delivery', promoInput: d.promoInput };
+      v[f + '_setName'] = (e) => this.setFrame(f, { name: e.target.value });
+      v[f + '_setDate'] = (e) => this.setFrame(f, { date: e.target.value });
+      v[f + '_setAddress'] = (e) => this.setFrame(f, { address: e.target.value });
+      v[f + '_setPromo'] = (e) => this.setFrame(f, { promoInput: e.target.value });
+      v[f + '_applyPromo'] = () => this.applyPromo(f);
+      v[f + '_checkout'] = () => this.checkout(f);
+    });
+    v.A_openSheet = () => this.setState({ sheetA: true });
+    v.A_closeSheet = () => this.setState({ sheetA: false });
+    v.A_sheet = this.state.sheetA;
+    v.modal = this.modalVM();
+    v.hasModal = !!this.state.modal;
+    v.toast = this.state.toast;
+    v.hasToast = !!this.state.toast;
+    v.orders = this.ordersVM();
+    v.sales = this.salesSummary();
+    v.order = this.selectedOrder();
+    v.historyOpen = this.state.historyOpen;
+    v.openHistory = () => this.setState({ historyOpen: true });
+    v.closeHistory = () => this.setState({ historyOpen: false });
+    return v;
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+/* ─── Color System ───────────────────────────────────────────────────────────
+   Three primitive scales + a semantic layer.
+   All values in OKLCH for perceptually uniform steps.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+:root {
+
+  /* ── Olive ─────────────────────────────────── warm earthy green, hue 100° */
+  --olive-50:  oklch(97.5% 0.010 100);
+  --olive-100: oklch(93.5% 0.020 100);
+  --olive-200: oklch(87%   0.036 100);
+  --olive-300: oklch(79%   0.052 100);
+  --olive-400: oklch(70%   0.062 100);
+  --olive-500: oklch(61%   0.068 100);
+  --olive-600: oklch(52%   0.062 100);
+  --olive-700: oklch(43%   0.052 100);
+  --olive-800: oklch(33%   0.038 100);
+  --olive-900: oklch(24%   0.026 100);
+
+  /* ── Sage ──────────────────────────────────── cool sage green, hue 148° */
+  --sage-50:   oklch(97%   0.012 148);
+  --sage-100:  oklch(92%   0.026 148);
+  --sage-200:  oklch(85%   0.046 148);
+  --sage-300:  oklch(76%   0.064 148);
+  --sage-400:  oklch(66%   0.076 148);
+  --sage-500:  oklch(56%   0.080 148);
+  --sage-600:  oklch(47%   0.070 148);
+  --sage-700:  oklch(39%   0.056 148);
+  --sage-800:  oklch(29%   0.040 148);
+  --sage-900:  oklch(20%   0.026 148);
+
+  /* ── Stone ─────────────────────────────────── warm neutral, hue 75° */
+  --stone-50:  oklch(98.5% 0.005  75);
+  --stone-100: oklch(95.5% 0.010  75);
+  --stone-200: oklch(90.5% 0.018  75);
+  --stone-300: oklch(83%   0.024  75);
+  --stone-400: oklch(73%   0.024  75);
+  --stone-500: oklch(62.5% 0.022  75);
+  --stone-600: oklch(51%   0.020  75);
+  --stone-700: oklch(40.5% 0.016  75);
+  --stone-800: oklch(29%   0.012  75);
+  --stone-900: oklch(19%   0.008  75);
+
+  /* ── Base ──────────────────────────────────────────────────────────────── */
+  --white: #ffffff;
+  --black: oklch(12% 0.005 75);
+
+  /* ━━━━━━━━━━━━━━━━━━━━━ SEMANTIC LAYER ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+  /* Backgrounds */
+  --bg-canvas:         var(--stone-50);
+  --bg-subtle:         var(--stone-100);
+  --bg-muted:          var(--stone-200);
+
+  /* Surfaces */
+  --surface-default:   var(--white);
+  --surface-raised:    var(--stone-50);
+  --surface-overlay:   var(--white);
+
+  /* Foreground / Text */
+  --fg-default:        var(--olive-900);
+  --fg-subtle:         var(--olive-700);
+  --fg-muted:          var(--stone-600);
+  --fg-disabled:       var(--stone-400);
+  --fg-inverse:        var(--stone-50);
+  --fg-on-accent:      var(--white);
+
+  /* Brand Accent — olive */
+  --accent:            var(--olive-600);
+  --accent-hover:      var(--olive-700);
+  --accent-active:     var(--olive-800);
+  --accent-subtle:     var(--olive-100);
+  --accent-muted:      var(--olive-200);
+  --accent-fg:         var(--olive-700);
+
+  /* Secondary Accent — sage */
+  --accent-sage:        var(--sage-500);
+  --accent-sage-hover:  var(--sage-600);
+  --accent-sage-subtle: var(--sage-100);
+  --accent-sage-muted:  var(--sage-200);
+  --accent-sage-fg:     var(--sage-700);
+
+  /* Borders */
+  --border-subtle:     var(--stone-100);
+  --border-default:    var(--stone-200);
+  --border-strong:     var(--stone-300);
+  --border-accent:     var(--olive-400);
+
+  /* Focus */
+  --focus-ring:        var(--olive-500);
+  --focus-ring-offset: var(--white);
+
+  /* Status */
+  --status-success:    var(--sage-500);
+  --status-success-bg: var(--sage-100);
+  --status-success-fg: var(--sage-700);
+  --status-warning:    oklch(68% 0.13 75);
+  --status-warning-bg: oklch(95% 0.04 80);
+  --status-warning-fg: oklch(42% 0.10 75);
+  --status-error:      oklch(54% 0.16 25);
+  --status-error-bg:   oklch(96% 0.04 25);
+  --status-error-fg:   oklch(38% 0.13 25);
+  --status-info:       oklch(54% 0.10 250);
+  --status-info-bg:    oklch(95% 0.03 250);
+  --status-info-fg:    oklch(38% 0.08 250);
+}
