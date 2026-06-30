@@ -30,7 +30,7 @@ export default function Expenses() {
     e.preventDefault();
     const expense = {
       date: f.date, description: f.description.trim(), category: f.category.trim(),
-      amount, buyer, mat_barcode: f.barcode.trim(), replenishment_id: null,
+      amount, buyer, mat_barcode: f.barcode.trim(),
       qty: Number(f.qty) || 0, unit: f.unit.trim() || 'pcs', price: Number(f.price) || 0,
       discount: Number(f.discount) || 0, shipping_cost: Number(f.shipping) || 0, note: f.note.trim()
     };

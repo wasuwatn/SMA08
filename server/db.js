@@ -64,10 +64,9 @@ export const TABLE_CONFIG = {
   },
   settings: {
     pk: 'id', auto: true,
-    columns: ['id', 'sweetness_levels', 'buyers', 'current_theme', 'logo'],
+    columns: ['id', 'sweetness_levels', 'buyers', 'logo'],
     ddl: `CREATE TABLE IF NOT EXISTS settings (
-      id SERIAL PRIMARY KEY, sweetness_levels TEXT, buyers TEXT,
-      current_theme TEXT, logo TEXT)`
+      id SERIAL PRIMARY KEY, sweetness_levels TEXT, buyers TEXT, logo TEXT)`
   },
   materials: {
     pk: 'id', auto: false,
@@ -85,6 +84,11 @@ export const TABLE_CONFIG = {
       id TEXT PRIMARY KEY, name TEXT, category TEXT, front_price DOUBLE PRECISION,
       delivery_price DOUBLE PRECISION, status TEXT)`
   },
+  // `material_id` is a tagged reference disambiguated by its id prefix:
+  //   MAT…  → a real row in `materials`
+  //   PBOM… → a packaging set in `packagingbom` (expanded into its component materials)
+  //   MPRE… → a mat-prep set in `matprepbom` (expanded likewise)
+  // See expandSetItems()/computeRequirements() in client/src/lib/helpers.js.
   bom: {
     pk: 'id', auto: true,
     columns: ['id', 'menu_name', 'material_id', 'qty_used'],
@@ -197,19 +201,13 @@ export const TABLE_CONFIG = {
       id SERIAL PRIMARY KEY, period_start TEXT, period_end TEXT, menu_name TEXT,
       qty DOUBLE PRECISION, sales DOUBLE PRECISION, source TEXT)`
   },
-  replenishments: {
-    pk: 'id', auto: true,
-    columns: ['id', 'date', 'material_id', 'qty', 'note'],
-    ddl: `CREATE TABLE IF NOT EXISTS replenishments (
-      id SERIAL PRIMARY KEY, date TEXT, material_id TEXT, qty DOUBLE PRECISION, note TEXT)`
-  },
   expenses: {
     pk: 'id', auto: true,
     columns: ['id', 'date', 'description', 'amount', 'buyer', 'mat_barcode',
-      'replenishment_id', 'qty', 'unit', 'price', 'category', 'discount', 'shipping_cost', 'note'],
+      'qty', 'unit', 'price', 'category', 'discount', 'shipping_cost', 'note'],
     ddl: `CREATE TABLE IF NOT EXISTS expenses (
       id SERIAL PRIMARY KEY, date TEXT, description TEXT, amount DOUBLE PRECISION,
-      buyer TEXT, mat_barcode TEXT, replenishment_id INTEGER, qty DOUBLE PRECISION, unit TEXT,
+      buyer TEXT, mat_barcode TEXT, qty DOUBLE PRECISION, unit TEXT,
       price DOUBLE PRECISION, category TEXT, discount DOUBLE PRECISION, shipping_cost DOUBLE PRECISION, note TEXT)`
   },
   systemlog: {
@@ -329,6 +327,18 @@ async function migrate() {
       }
     }
   }
+  // Phase-1 cleanup: drop dead objects that never carried live data.
+  //  - `replenishments` was superseded by stocklog and never read/written.
+  //  - `expenses.replenishment_id` was always null (referred to the dead table).
+  //  - `settings.current_theme` was write-only; theme lives in localStorage.
+  // All guarded with IF EXISTS so this stays idempotent across boots.
+  for (const sql of [
+    'DROP TABLE IF EXISTS replenishments',
+    'ALTER TABLE expenses DROP COLUMN IF EXISTS replenishment_id',
+    'ALTER TABLE settings DROP COLUMN IF EXISTS current_theme'
+  ]) {
+    try { await pool.query(sql); } catch { /* ignore */ }
+  }
 }
 
 async function seed() {
@@ -348,7 +358,7 @@ async function seed() {
 
     await insertRow('settings', {
       sweetness_levels: 'No Sweet, 25%, 50%, 100%',
-      buyers: 'Admin, Staff, Buyer A', current_theme: 'spring', logo: null
+      buyers: 'Admin, Staff, Buyer A', logo: null
     }, client);
 
     const materials = [
@@ -457,12 +467,12 @@ async function seed() {
     for (const d of deliveries) await insertRow('saledelivery', d, client);
 
     const expenses = [
-      { date: '2026-01-02', description: 'Arabica Premium Beans 500g', amount: 1750, buyer: 'Admin', mat_barcode: '8850123456789', replenishment_id: null, qty: 5, unit: 'g', price: 350, category: 'Beans', discount: 0, shipping_cost: 0, note: 'Initial stock setup' },
-      { date: '2026-02-15', description: 'Meiji Milk 2L', amount: 950, buyer: 'Staff', mat_barcode: '8850123456790', replenishment_id: null, qty: 10, unit: 'ml', price: 95, category: 'Dairy', discount: 0, shipping_cost: 0, note: 'Stock order' },
-      { date: '2026-03-10', description: 'Rent Payment', amount: 12000, buyer: 'Admin', mat_barcode: '', replenishment_id: null, qty: 1, unit: 'month', price: 12000, category: 'Rent', discount: 0, shipping_cost: 0, note: 'Monthly cafe rent' },
-      { date: '2026-04-05', description: 'Mitr Phol Syrup 1L', amount: 480, buyer: 'Buyer A', mat_barcode: '8850123456792', replenishment_id: null, qty: 8, unit: 'ml', price: 60, category: 'Sweetener', discount: 0, shipping_cost: 0, note: '' },
-      { date: '2026-05-10', description: 'Van Houten Cocoa 500g', amount: 1120, buyer: 'Admin', mat_barcode: '8850123456791', replenishment_id: null, qty: 4, unit: 'g', price: 280, category: 'Powder', discount: 0, shipping_cost: 0, note: '' },
-      { date: '2026-06-02', description: 'Electric Bill', amount: 3450, buyer: 'Admin', mat_barcode: '', replenishment_id: null, qty: 1, unit: 'pcs', price: 3450, category: 'Utility', discount: 0, shipping_cost: 0, note: '' }
+      { date: '2026-01-02', description: 'Arabica Premium Beans 500g', amount: 1750, buyer: 'Admin', mat_barcode: '8850123456789', qty: 5, unit: 'g', price: 350, category: 'Beans', discount: 0, shipping_cost: 0, note: 'Initial stock setup' },
+      { date: '2026-02-15', description: 'Meiji Milk 2L', amount: 950, buyer: 'Staff', mat_barcode: '8850123456790', qty: 10, unit: 'ml', price: 95, category: 'Dairy', discount: 0, shipping_cost: 0, note: 'Stock order' },
+      { date: '2026-03-10', description: 'Rent Payment', amount: 12000, buyer: 'Admin', mat_barcode: '', qty: 1, unit: 'month', price: 12000, category: 'Rent', discount: 0, shipping_cost: 0, note: 'Monthly cafe rent' },
+      { date: '2026-04-05', description: 'Mitr Phol Syrup 1L', amount: 480, buyer: 'Buyer A', mat_barcode: '8850123456792', qty: 8, unit: 'ml', price: 60, category: 'Sweetener', discount: 0, shipping_cost: 0, note: '' },
+      { date: '2026-05-10', description: 'Van Houten Cocoa 500g', amount: 1120, buyer: 'Admin', mat_barcode: '8850123456791', qty: 4, unit: 'g', price: 280, category: 'Powder', discount: 0, shipping_cost: 0, note: '' },
+      { date: '2026-06-02', description: 'Electric Bill', amount: 3450, buyer: 'Admin', mat_barcode: '', qty: 1, unit: 'pcs', price: 3450, category: 'Utility', discount: 0, shipping_cost: 0, note: '' }
     ];
     for (const e of expenses) await insertRow('expenses', e, client);
   });

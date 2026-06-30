@@ -92,9 +92,8 @@ export default function Settings() {
     pushToast('Store settings saved.', 'success');
   };
 
-  const chooseTheme = async (t) => {
-    setTheme(t);
-    if (settings.id) await update('settings', settings.id, { current_theme: t });
+  const chooseTheme = (t) => {
+    setTheme(t); // persisted to localStorage by the data layer
     pushToast(`Theme changed to ${t}.`, 'success');
   };
 

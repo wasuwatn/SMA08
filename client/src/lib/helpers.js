@@ -2,7 +2,7 @@
 
 export const TABLES = [
   'users', 'settings', 'materials', 'menuname', 'bom', 'childmenu', 'salefront', 'saledelivery',
-  'replenishments', 'stocklog', 'expenses', 'systemlog', 'customers', 'addons', 'packagingbom', 'matprepbom',
+  'stocklog', 'expenses', 'systemlog', 'customers', 'addons', 'packagingbom', 'matprepbom',
   'deliverydaily', 'deliverymenu', 'promotions'
 ];
 

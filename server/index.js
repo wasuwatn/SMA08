@@ -530,12 +530,21 @@ app.get('/api/:table', async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Per-base-unit cost of a material = pack price / (pack qty * usable yield).
+// Computed server-side so it can never drift from price/qty/yield, regardless
+// of what the client sends.
+function materialUnitPrice({ price, qty, yield: yld }) {
+  const p = Number(price) || 0, q = Number(qty) || 0, y = Number(yld) || 0;
+  return q > 0 && y > 0 ? p / (q * (y / 100)) : 0;
+}
+
 app.post('/api/:table', async (req, res) => {
   const { table } = req.params;
   if (!valid(table)) return res.status(404).json({ error: 'Unknown table' });
   try {
     const data = { ...req.body };
     if (table === 'users' && data.password) data.password = await hashPassword(data.password);
+    if (table === 'materials') data.unit_price = materialUnitPrice(data);
     const row = await insertRow(table, data);
     if (table !== 'systemlog') await logActivity(actor(req), 'DB INSERT', `${table}: ${JSON.stringify(data).slice(0, 120)}`);
     res.json(row);
@@ -552,6 +561,12 @@ app.put('/api/:table/:id', async (req, res) => {
     if (table === 'users') {
       if (data.password) data.password = await hashPassword(data.password);
       else delete data.password; // keep existing when blank
+    }
+    // Recompute unit_price whenever any of its inputs change, merging with the
+    // current row so a partial update (e.g. status-only toggle) leaves it alone.
+    if (table === 'materials' && ['price', 'qty', 'yield'].some(k => data[k] !== undefined)) {
+      const current = await getRow('materials', id);
+      data.unit_price = materialUnitPrice({ ...current, ...data });
     }
     const row = await updateRow(table, id, data);
     if (table !== 'systemlog') await logActivity(actor(req), 'DB UPDATE', `${table}#${id}`);
