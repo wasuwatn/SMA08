@@ -162,12 +162,14 @@ export function computeCupCost(bomRows, materials, packagingbom = [], matprepbom
 // Stamp-loyalty status for a named customer: how many paid cups they've
 // bought, how many free cups they've already received, and how many free
 // cups they're eligible for right now. Walk-ins (no name) never accumulate.
-export function loyaltyStatus(customerName, salefront, promotion) {
+export function loyaltyStatus(customerName, salefront, promotion, customerId = null) {
   if (!customerName || customerName === 'Walk-in' || !promotion) {
     return { purchased: 0, given: 0, available: 0 };
   }
   const nl = customerName.trim().toLowerCase();
-  const mine = salefront.filter(s => s.customer_name && s.customer_name.trim().toLowerCase() === nl);
+  const mine = customerId != null
+    ? salefront.filter(s => Number(s.customer_id) === Number(customerId))
+    : salefront.filter(s => s.customer_name && s.customer_name.trim().toLowerCase() === nl);
   const purchased = mine.filter(s => s.is_free !== '1').length;
   const given = mine.filter(s => s.is_free === '1').length;
   const buyQty = Number(promotion.buy_qty) || 1;

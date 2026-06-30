@@ -139,14 +139,19 @@ async function activeStampPromotion() {
 // client: purchased = paid cups, given = free cups already rung, pending = open
 // redemption codes not yet used. available subtracts pending so codes can't be
 // over-minted.
-async function loyaltyFor(customerName, promotion) {
+async function loyaltyFor(customerName, promotion, customerId = null) {
   if (!customerName || !promotion) return { purchased: 0, given: 0, available: 0, pending: 0 };
-  const { rows: [c] } = await pool.query(
-    `SELECT
-       COUNT(*) FILTER (WHERE COALESCE(is_free,'0') <> '1') AS purchased,
-       COUNT(*) FILTER (WHERE is_free = '1') AS given
-     FROM salefront WHERE lower(customer_name) = lower($1)`, [customerName]
-  );
+  const { rows: [c] } = customerId
+    ? await pool.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE COALESCE(is_free,'0') <> '1') AS purchased,
+           COUNT(*) FILTER (WHERE is_free = '1') AS given
+         FROM salefront WHERE customer_id = $1`, [customerId])
+    : await pool.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE COALESCE(is_free,'0') <> '1') AS purchased,
+           COUNT(*) FILTER (WHERE is_free = '1') AS given
+         FROM salefront WHERE lower(customer_name) = lower($1)`, [customerName]);
   const { rows: [p] } = await pool.query(
     "SELECT COUNT(*) AS pending FROM redemptions WHERE lower(customer_name) = lower($1) AND status = 'pending' AND expires_at > $2",
     [customerName, new Date().toISOString()]
@@ -211,10 +216,10 @@ app.get('/api/customer/me', requireCustomer, async (req, res) => {
     const customer = await getRow('customers', req.customer.customer_id);
     if (!customer) return res.status(404).json({ error: 'Customer not found.' });
     const promotion = await activeStampPromotion();
-    const loyalty = await loyaltyFor(customer.name, promotion);
+    const loyalty = await loyaltyFor(customer.name, promotion, customer.id);
     const { rows: recentOrders } = await pool.query(
-      'SELECT date, menu_name, total_price, is_free FROM salefront WHERE lower(customer_name) = lower($1) ORDER BY id DESC LIMIT 10',
-      [customer.name]
+      'SELECT date, menu_name, total_price, is_free FROM salefront WHERE customer_id = $1 ORDER BY id DESC LIMIT 10',
+      [customer.id]
     );
     res.json({ customer, promotion, loyalty, recentOrders });
   } catch (e) {
@@ -307,13 +312,27 @@ async function runCheckout(table, body, user) {
     }
     // One order number per checkout (not per cup), so the front register's
     // Sales History can group rows by order instead of guessing from name/date.
+    // Resolve customer_id once per checkout (walk-ins stay null).
+    let resolvedCustomerId = null;
+    if (table === 'salefront' && sales.length) {
+      const custName = (sales[0].customer_name || '').trim();
+      if (custName && custName.toLowerCase() !== 'walk-in') {
+        const { rows: cr } = await client.query(
+          'SELECT id FROM customers WHERE lower(name) = lower($1) LIMIT 1', [custName]);
+        if (cr[0]) resolvedCustomerId = cr[0].id;
+      }
+    }
     let orderNo = null;
     if (table === 'salefront' && sales.length) {
       const { rows: [{ next }] } = await client.query("SELECT nextval('salefront_order_seq') AS next");
       orderNo = String(next).padStart(4, '0');
     }
     const out = [];
-    for (const s of sales) out.push(await insertRow(table, orderNo ? { ...s, order_no: orderNo } : s, client));
+    for (const s of sales) {
+      const row = orderNo ? { ...s, order_no: orderNo } : { ...s };
+      if (table === 'salefront' && resolvedCustomerId != null) row.customer_id = resolvedCustomerId;
+      out.push(await insertRow(table, row, client));
+    }
     // Promo giveaway cups are recorded as a cost (their BOM materials are
     // still deducted above like any other cup) rather than silently eating
     // into margin with no trace.

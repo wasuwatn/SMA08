@@ -91,9 +91,9 @@ export const TABLE_CONFIG = {
   // See expandSetItems()/computeRequirements() in client/src/lib/helpers.js.
   bom: {
     pk: 'id', auto: true,
-    columns: ['id', 'menu_name', 'material_id', 'qty_used'],
+    columns: ['id', 'menu_name', 'menu_id', 'material_id', 'qty_used'],
     ddl: `CREATE TABLE IF NOT EXISTS bom (
-      id SERIAL PRIMARY KEY, menu_name TEXT, material_id TEXT, qty_used DOUBLE PRECISION)`
+      id SERIAL PRIMARY KEY, menu_name TEXT, menu_id TEXT, material_id TEXT, qty_used DOUBLE PRECISION)`
   },
   packagingbom: {
     pk: 'id', auto: false,
@@ -145,7 +145,7 @@ export const TABLE_CONFIG = {
   },
   salefront: {
     pk: 'id', auto: true,
-    columns: ['id', 'date', 'customer_name', 'customer_address', 'menu_name', 'variant', 'quantity',
+    columns: ['id', 'date', 'customer_name', 'customer_address', 'customer_id', 'menu_name', 'variant', 'quantity',
       'sweetness', 'container', 'addons', 'addon_price', 'total_price', 'cashier', 'order_no',
       'order_type', 'delivery_platform', 'is_free', 'promotion_id'],
     ddl: `CREATE TABLE IF NOT EXISTS salefront (
@@ -156,14 +156,14 @@ export const TABLE_CONFIG = {
   },
   childmenu: {
     pk: 'id', auto: true,
-    columns: ['id', 'menu_name', 'name', 'material_id', 'qty_used', 'price_change'],
+    columns: ['id', 'menu_name', 'menu_id', 'name', 'material_id', 'qty_used', 'price_change'],
     ddl: `CREATE TABLE IF NOT EXISTS childmenu (
       id SERIAL PRIMARY KEY, menu_name TEXT, name TEXT,
       material_id TEXT, qty_used DOUBLE PRECISION, price_change DOUBLE PRECISION DEFAULT 0)`
   },
   saledelivery: {
     pk: 'id', auto: true,
-    columns: ['id', 'date', 'customer_name', 'customer_address', 'raw_order_string',
+    columns: ['id', 'date', 'customer_name', 'customer_address', 'customer_id', 'raw_order_string',
       'base_price', 'discount_tier1', 'discount_type1', 'discount_tier2', 'discount_type2',
       'discount_tier3', 'discount_type3', 'ad_cost', 'gp_amount', 'net_price', 'status', 'cashier',
       'addons', 'addon_price'],
@@ -203,7 +203,7 @@ export const TABLE_CONFIG = {
   },
   expenses: {
     pk: 'id', auto: true,
-    columns: ['id', 'date', 'description', 'amount', 'buyer', 'mat_barcode',
+    columns: ['id', 'date', 'description', 'amount', 'buyer', 'mat_barcode', 'material_id',
       'qty', 'unit', 'price', 'category', 'discount', 'shipping_cost', 'note'],
     ddl: `CREATE TABLE IF NOT EXISTS expenses (
       id SERIAL PRIMARY KEY, date TEXT, description TEXT, amount DOUBLE PRECISION,
@@ -336,6 +336,33 @@ async function migrate() {
     'DROP TABLE IF EXISTS replenishments',
     'ALTER TABLE expenses DROP COLUMN IF EXISTS replenishment_id',
     'ALTER TABLE settings DROP COLUMN IF EXISTS current_theme'
+  ]) {
+    try { await pool.query(sql); } catch { /* ignore */ }
+  }
+
+  // Phase-2: add id-based FK columns alongside existing text-name columns.
+  // All additive (nullable), backfilled once from matching names/barcodes.
+  for (const sql of [
+    'ALTER TABLE salefront ADD COLUMN IF NOT EXISTS customer_id INTEGER',
+    'ALTER TABLE saledelivery ADD COLUMN IF NOT EXISTS customer_id INTEGER',
+    'ALTER TABLE expenses ADD COLUMN IF NOT EXISTS material_id TEXT',
+    'ALTER TABLE bom ADD COLUMN IF NOT EXISTS menu_id TEXT',
+    'ALTER TABLE childmenu ADD COLUMN IF NOT EXISTS menu_id TEXT'
+  ]) {
+    try { await pool.query(sql); } catch { /* ignore */ }
+  }
+  // One-time backfill: match existing name/barcode strings to their id.
+  for (const sql of [
+    `UPDATE salefront sf SET customer_id = c.id FROM customers c
+       WHERE sf.customer_id IS NULL AND lower(sf.customer_name) = lower(c.name)`,
+    `UPDATE saledelivery sd SET customer_id = c.id FROM customers c
+       WHERE sd.customer_id IS NULL AND lower(sd.customer_name) = lower(c.name)`,
+    `UPDATE expenses e SET material_id = m.id FROM materials m
+       WHERE e.material_id IS NULL AND e.mat_barcode <> '' AND e.mat_barcode = m.mat_barcode`,
+    `UPDATE bom b SET menu_id = m.id FROM menuname m
+       WHERE b.menu_id IS NULL AND lower(b.menu_name) = lower(m.name)`,
+    `UPDATE childmenu c SET menu_id = m.id FROM menuname m
+       WHERE c.menu_id IS NULL AND lower(c.menu_name) = lower(m.name)`
   ]) {
     try { await pool.query(sql); } catch { /* ignore */ }
   }

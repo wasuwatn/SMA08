@@ -67,7 +67,7 @@ export default function Recipes() {
     for (const b of legacy) await api.remove('bom', b.id);
     for (const r of rows) {
       if (r.material_id && Number(r.qty_used) > 0) {
-        await api.insert('bom', { menu_name: activeDrink.name, material_id: r.material_id, qty_used: Number(r.qty_used) });
+        await api.insert('bom', { menu_name: activeDrink.name, menu_id: activeDrink.id, material_id: r.material_id, qty_used: Number(r.qty_used) });
       }
     }
     // Persist child menus (variant beans) for this drink.
@@ -75,7 +75,7 @@ export default function Recipes() {
     for (const c of legacyChildren) await api.remove('childmenu', c.id);
     for (const c of childRows) {
       if (c.name && c.material_id) {
-        await api.insert('childmenu', { menu_name: activeDrink.name, name: c.name.trim(), material_id: c.material_id, qty_used: Number(c.qty_used) || 1, price_change: Number(c.price_change) || 0 });
+        await api.insert('childmenu', { menu_name: activeDrink.name, menu_id: activeDrink.id, name: c.name.trim(), material_id: c.material_id, qty_used: Number(c.qty_used) || 1, price_change: Number(c.price_change) || 0 });
       }
     }
     await reload(['bom', 'childmenu']);

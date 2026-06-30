@@ -65,7 +65,8 @@ export default function POS() {
 
   // Stamp-loyalty promo (buy_qty cups -> free_qty free, capped at max_free_value)
   const promotion = (data.promotions || []).find(p => p.type === 'stamp' && p.status === 'Active');
-  const loyalty = useMemo(() => loyaltyStatus(customer, data.salefront, promotion), [customer, data.salefront, promotion]);
+  const custRecord = useMemo(() => data.customers.find(c => c.name.trim().toLowerCase() === customer.trim().toLowerCase()), [customer, data.customers]);
+  const loyalty = useMemo(() => loyaltyStatus(customer, data.salefront, promotion, custRecord?.id ?? null), [customer, data.salefront, promotion, custRecord]);
   const freeUsedInCart = cart.reduce((s, item) => s + (item.isFree ? item.qty : 0), 0);
   const freeRemaining = Math.max(0, loyalty.available - freeUsedInCart);
   const eligibleForFree = selected && promotion ? Number(selected.front_price) <= Number(promotion.max_free_value) : false;
@@ -326,6 +327,7 @@ export default function POS() {
           date,
           customer_name: customer.trim() || 'Walk-in',
           customer_address: address.trim(),
+          customer_id: custRecord?.id ?? null,
           order_type: orderType,
           delivery_platform: orderType === 'Delivery' ? deliveryPlatform : '',
           menu_name: item.drink.name,
