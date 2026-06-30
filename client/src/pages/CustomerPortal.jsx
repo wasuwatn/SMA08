@@ -53,7 +53,7 @@ export default function CustomerPortal() {
           setPhase('error');
           return;
         }
-        if (!liff.isLoggedIn()) { liff.login(); return; } // redirects to LINE
+        if (!liff.isLoggedIn()) { liff.login({ redirectUri: window.location.href }); return; }
         loginBody = { idToken: liff.getIDToken() };
       } else if (devUser) {
         loginBody = { devLineUserId: devUser, devName: 'Dev Tester' };
