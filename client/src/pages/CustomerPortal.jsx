@@ -38,18 +38,41 @@ export default function CustomerPortal() {
       const devUser = import.meta.env.VITE_DEV_LINE_USER; // local testing only
       let loginBody;
       if (liffId) {
-        const liff = await loadLiff();
-        await liff.init({ liffId });
+        let liff;
+        try {
+          liff = await loadLiff();
+        } catch {
+          setError('ไม่สามารถโหลด LINE SDK ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต');
+          setPhase('error');
+          return;
+        }
+        try {
+          await liff.init({ liffId });
+        } catch (e) {
+          setError(`LIFF init ล้มเหลว: ${e.message || 'กรุณาตรวจสอบว่า LIFF ID ถูกต้องและโดเมนนี้ได้รับอนุญาตใน LINE Developers Console'}`);
+          setPhase('error');
+          return;
+        }
         if (!liff.isLoggedIn()) { liff.login(); return; } // redirects to LINE
         loginBody = { idToken: liff.getIDToken() };
       } else if (devUser) {
         loginBody = { devLineUserId: devUser, devName: 'Dev Tester' };
       } else {
-        setError('LINE login is not configured (VITE_LIFF_ID missing).');
+        setError('ยังไม่ได้ตั้งค่า VITE_LIFF_ID — กรุณาเปิดหน้านี้ผ่าน LINE');
         setPhase('error');
         return;
       }
-      const res = await customerApi.lineLogin(loginBody);
+      let res;
+      try {
+        res = await customerApi.lineLogin(loginBody);
+      } catch (e) {
+        const hint = e.message === 'Failed to fetch'
+          ? 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบว่า VITE_API_BASE ชี้ไปยัง API server ที่ถูกต้อง'
+          : e.message;
+        setError(hint || 'เข้าสู่ระบบไม่สำเร็จ');
+        setPhase('error');
+        return;
+      }
       if (res.needsRegistration) {
         setPendingToken(res.token);
         setRegName(res.name || '');
@@ -106,7 +129,10 @@ export default function CustomerPortal() {
       <div className="card" style={{ maxWidth: 360, textAlign: 'center' }}>
         <div className="logo" style={{ margin: '0 auto 12px' }}>K</div>
         <h3>เกิดข้อผิดพลาด</h3>
-        <p className="helper-text">{error}</p>
+        <p className="helper-text" style={{ wordBreak: 'break-word' }}>{error}</p>
+        <button className="btn btn-secondary btn-block" style={{ marginTop: 16 }} onClick={bootstrap}>
+          ลองใหม่อีกครั้ง
+        </button>
       </div>
     </Centered>;
   }
