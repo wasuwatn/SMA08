@@ -573,9 +573,14 @@ app.delete('/api/:table/:id', async (req, res) => {
   }
 });
 
-// SPA fallback: serve index.html for any non-API route (client-side routing).
+// Multi-page SPA fallback: each satellite app gets its own HTML shell;
+// all other non-API routes fall back to the Mother app (index.html).
 if (fs.existsSync(CLIENT_DIST)) {
-  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(CLIENT_DIST, 'index.html')));
+  const distFile = (name) => path.join(CLIENT_DIST, name);
+  app.get('/pos.html', (_req, res) => res.sendFile(distFile('pos.html')));
+  app.get('/expense.html', (_req, res) => res.sendFile(distFile('expense.html')));
+  app.get('/customer.html', (_req, res) => res.sendFile(distFile('customer.html')));
+  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(distFile('index.html')));
 }
 
 const PORT = process.env.PORT || 4000;
