@@ -197,12 +197,13 @@ export default function CustomerPortal() {
         <div className="card" style={{ textAlign: 'center' }}>
           <div className="card-header"><h3>โค้ดแลกแก้วฟรี</h3></div>
           <p className="helper-text">แสดงโค้ดนี้ให้พนักงานที่เคาน์เตอร์</p>
-          {qrUrl && <img src={qrUrl} alt="QR" style={{ width: 200, height: 200, margin: '8px auto' }} />}
+          {qrUrl && <img src={qrUrl} alt="QR" style={{ width: 200, height: 200, margin: '8px auto', display: 'block' }} />}
+          <p className="helper-text" style={{ marginBottom: 4 }}>รหัส</p>
           <div style={{ fontSize: 36, fontWeight: 700, letterSpacing: 6, fontFamily: 'DM Mono, monospace' }}>{redeem.code}</div>
           {redeem.max_free_value > 0 && (
             <p className="helper-text" style={{ marginTop: 8 }}>ใช้กับเมนูราคาไม่เกิน {money(redeem.max_free_value)}</p>
           )}
-          <p className="helper-text">โค้ดหมดอายุใน 30 นาที</p>
+          <p className="helper-text">โค้ดหมดอายุใน 1 ชั่วโมง</p>
         </div>
       )}
 

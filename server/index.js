@@ -237,7 +237,7 @@ app.post('/api/customer/redeem', requireCustomer, async (req, res) => {
     if (loyalty.available < 1) return res.status(409).json({ error: 'No free cups available.' });
     const code = String(Math.floor(100000 + Math.random() * 900000)); // 6-digit
     const now = new Date();
-    const expires = new Date(now.getTime() + 30 * 60 * 1000); // +30 min
+    const expires = new Date(now.getTime() + 60 * 60 * 1000); // +1 hr
     const row = await insertRow('redemptions', {
       code, customer_id: customer.id, customer_name: customer.name, promotion_id: promotion.id,
       status: 'pending', created_at: now.toISOString(), expires_at: expires.toISOString()
