@@ -614,6 +614,14 @@ if (fs.existsSync(CLIENT_DIST)) {
   app.get('/pos.html', (_req, res) => res.sendFile(distFile('pos.html')));
   app.get('/expense.html', (_req, res) => res.sendFile(distFile('expense.html')));
   app.get('/customer.html', (_req, res) => res.sendFile(distFile('customer.html')));
+  // If LINE LIFF redirects back to root with liff.state param, forward to the portal.
+  app.get('/', (req, res) => {
+    if ('liff.state' in req.query) {
+      const qs = new URLSearchParams(req.query).toString();
+      return res.redirect(302, `/customer.html?${qs}`);
+    }
+    res.sendFile(distFile('index.html'));
+  });
   app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(distFile('index.html')));
 }
 
