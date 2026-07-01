@@ -31,6 +31,7 @@ export const customerApi = {
   lineLogin: (body) => req('POST', '/api/customer/line-login', body),
   // Uses the short-lived pending token returned by lineLogin.
   register: (body, pendingToken) => req('POST', '/api/customer/register', body, pendingToken),
+  menuOptions: () => req('GET', '/api/customer/menu-options'),
   me: () => req('GET', '/api/customer/me'),
   redeem: () => req('POST', '/api/customer/redeem', {})
 };

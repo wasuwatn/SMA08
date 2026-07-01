@@ -138,10 +138,10 @@ export const TABLE_CONFIG = {
   },
   customers: {
     pk: 'id', auto: true,
-    columns: ['id', 'name', 'address', 'gender', 'phone', 'line_user_id'],
+    columns: ['id', 'name', 'address', 'gender', 'phone', 'line_user_id', 'code', 'date_of_birth', 'favorite_menu'],
     ddl: `CREATE TABLE IF NOT EXISTS customers (
       id SERIAL PRIMARY KEY, name TEXT, address TEXT, gender TEXT,
-      phone TEXT, line_user_id TEXT)`
+      phone TEXT, line_user_id TEXT, code TEXT, date_of_birth TEXT, favorite_menu TEXT)`
   },
   salefront: {
     pk: 'id', auto: true,
@@ -366,6 +366,18 @@ async function migrate() {
   ]) {
     try { await pool.query(sql); } catch { /* ignore */ }
   }
+
+  // Phase-3: staff-assigned customer code (1 letter + 3 digits), unique so it can
+  // reliably identify a customer regardless of what nickname they use on LINE.
+  // Normalize the old free-text gender values ('male'/'female') to the M/F/NA
+  // codes used going forward.
+  for (const sql of [
+    'ALTER TABLE customers ADD CONSTRAINT customers_code_unique UNIQUE (code)',
+    "UPDATE customers SET gender = 'M' WHERE lower(gender) = 'male'",
+    "UPDATE customers SET gender = 'F' WHERE lower(gender) = 'female'"
+  ]) {
+    try { await pool.query(sql); } catch { /* ignore (constraint already exists, etc.) */ }
+  }
 }
 
 async function seed() {
@@ -467,9 +479,9 @@ async function seed() {
     }, client);
 
     const customers = [
-      { name: 'John Doe', address: '123 Sukhumvit Rd, Bangkok', gender: 'male' },
-      { name: 'Jane Smith', address: '456 Silom Rd, Bangkok', gender: 'female' },
-      { name: 'Somsak Lee', address: '789 Sathorn Rd, Bangkok', gender: 'male' }
+      { name: 'John Doe', address: '123 Sukhumvit Rd, Bangkok', gender: 'M' },
+      { name: 'Jane Smith', address: '456 Silom Rd, Bangkok', gender: 'F' },
+      { name: 'Somsak Lee', address: '789 Sathorn Rd, Bangkok', gender: 'M' }
     ];
     for (const c of customers) await insertRow('customers', c, client);
 
