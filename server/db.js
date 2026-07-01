@@ -378,6 +378,16 @@ async function migrate() {
   ]) {
     try { await pool.query(sql); } catch { /* ignore (constraint already exists, etc.) */ }
   }
+
+  // Phase-4: Supabase flags any table without RLS as "Unrestricted" in its
+  // dashboard. That only matters for Supabase's own REST/GraphQL API
+  // (PostgREST) — this hub never uses it (it talks to Postgres directly via
+  // DATABASE_URL, a superuser role that bypasses RLS regardless). Enabling
+  // RLS with no policies closes that alternate access path with zero effect
+  // on the app itself.
+  for (const sql of TABLES.map(t => `ALTER TABLE ${t} ENABLE ROW LEVEL SECURITY`)) {
+    try { await pool.query(sql); } catch { /* ignore */ }
+  }
 }
 
 async function seed() {
