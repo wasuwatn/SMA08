@@ -2,7 +2,7 @@
 
 export const TABLES = [
   'users', 'settings', 'materials', 'menuname', 'bom', 'childmenu', 'salefront', 'saledelivery',
-  'replenishments', 'stocklog', 'expenses', 'systemlog', 'customers', 'addons', 'packagingbom', 'matprepbom',
+  'stocklog', 'expenses', 'systemlog', 'customers', 'addons', 'packagingbom', 'matprepbom',
   'deliverydaily', 'deliverymenu', 'promotions', 'shifts'
 ];
 
@@ -12,7 +12,7 @@ export const TABLES = [
 // DataProvider's `skipHeavyTables` prop) and fetch anything date-scoped
 // on demand via the server's ?since/&until/&limit query support instead.
 export const HEAVY_TABLES = [
-  'salefront', 'saledelivery', 'stocklog', 'systemlog', 'expenses', 'deliverydaily', 'deliverymenu', 'replenishments'
+  'salefront', 'saledelivery', 'stocklog', 'systemlog', 'expenses', 'deliverydaily', 'deliverymenu'
 ];
 
 // Delivery GP is computed automatically as a fixed percentage of the base price.
@@ -168,23 +168,19 @@ export function computeCupCost(bomRows, materials, packagingbom = [], matprepbom
   return { cost, warn };
 }
 
-// Stamp-loyalty status for a customer: how many paid cups they've bought, how
-// many free cups they've already received, and how many free cups they're
-// eligible for right now. Walk-ins (no name) never accumulate.
-// `customer` is a customer row ({ id, name }) or a bare name string. Sales are
-// matched by customer_id; rows from before that column existed fall back to a
-// name match so old stamps still count (mirrors loyaltyFor() on the server).
-export function loyaltyStatus(customer, salefront, promotion) {
-  const name = typeof customer === 'string' ? customer : (customer && customer.name);
-  const id = typeof customer === 'string' ? null : (customer && customer.id);
-  if (!name || name === 'Walk-in' || !promotion) {
+// Stamp-loyalty status for a named customer: how many paid cups they've
+// bought, how many free cups they've already received, and how many free
+// cups they're eligible for right now. Walk-ins (no name) never accumulate.
+// customer_id is a real backfilled FK (see migrate() in server/db.js), so a
+// customerId match is authoritative; name-only is for rows/customers without one.
+export function loyaltyStatus(customerName, salefront, promotion, customerId = null) {
+  if (!customerName || customerName === 'Walk-in' || !promotion) {
     return { purchased: 0, given: 0, available: 0 };
   }
-  const nl = String(name).trim().toLowerCase();
-  const mine = salefront.filter(s =>
-    (id != null && String(s.customer_id || '') === String(id)) ||
-    (!s.customer_id && s.customer_name && s.customer_name.trim().toLowerCase() === nl)
-  );
+  const nl = customerName.trim().toLowerCase();
+  const mine = customerId != null
+    ? salefront.filter(s => Number(s.customer_id) === Number(customerId))
+    : salefront.filter(s => s.customer_name && s.customer_name.trim().toLowerCase() === nl);
   const purchased = mine.filter(s => s.is_free !== '1').length;
   const given = mine.filter(s => s.is_free === '1').length;
   const buyQty = Number(promotion.buy_qty) || 1;

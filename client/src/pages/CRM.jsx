@@ -11,14 +11,18 @@ export default function CRM() {
 
   const rows = customers.map(c => {
     const nl = c.name.toLowerCase();
-    const fs = salefront.filter(s => s.customer_name && s.customer_name.toLowerCase() === nl);
-    const ds = saledelivery.filter(s => s.customer_name && s.customer_name.toLowerCase() === nl);
+    const fs = salefront.filter(s => s.customer_id != null
+      ? Number(s.customer_id) === c.id
+      : s.customer_name && s.customer_name.toLowerCase() === nl);
+    const ds = saledelivery.filter(s => s.customer_id != null
+      ? Number(s.customer_id) === c.id
+      : s.customer_name && s.customer_name.toLowerCase() === nl);
     const spending = fs.reduce((s, x) => s + (Number(x.total_price) || 0), 0) + ds.reduce((s, x) => s + (Number(x.net_price) || 0), 0);
     const frontCups = fs.reduce((s, x) => s + (Number(x.quantity) || 0), 0);
     let deliCups = 0;
     ds.forEach(x => Object.values(parseOrderCups(x.raw_order_string)).forEach(q => deliCups += q));
     const dates = [...fs.map(s => s.date), ...ds.map(s => s.date)].filter(Boolean).sort().reverse();
-    const loyalty = loyaltyStatus(c, salefront, promotion);
+    const loyalty = loyaltyStatus(c.name, salefront, promotion, c.id);
     return {
       id: c.id, name: c.name, address: c.address || 'N/A',
       orders: fs.length + ds.length, spending, cups: frontCups + deliCups,

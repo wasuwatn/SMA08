@@ -28,17 +28,15 @@ export default function Expenses() {
 
   const submit = async (e) => {
     e.preventDefault();
+    const scannedMat = f.barcode.trim() ? data.materials.find(x => x.mat_barcode === f.barcode.trim()) : null;
     const expense = {
       date: f.date, description: f.description.trim(), category: f.category.trim(),
-      amount, buyer, mat_barcode: f.barcode.trim(), replenishment_id: null,
+      amount, buyer, mat_barcode: f.barcode.trim(), material_id: scannedMat?.id ?? null,
       qty: Number(f.qty) || 0, unit: f.unit.trim() || 'pcs', price: Number(f.price) || 0,
       discount: Number(f.discount) || 0, shipping_cost: Number(f.shipping) || 0, note: f.note.trim()
     };
     let restock = null;
-    if (f.barcode.trim()) {
-      const m = data.materials.find(x => x.mat_barcode === f.barcode.trim());
-      if (m) restock = { material_id: m.id, increment: (Number(f.qty) || 0) * (Number(m.qty) || 1) };
-    }
+    if (scannedMat) restock = { material_id: scannedMat.id, increment: (Number(f.qty) || 0) * (Number(scannedMat.qty) || 1) };
     const res = await submitExpense({ expense, restock });
     pushToast(res?.queued ? 'Saved offline — will sync when online.' : 'Expense logged successfully!',
       res?.queued ? 'info' : 'success');

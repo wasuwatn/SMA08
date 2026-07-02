@@ -1833,3 +1833,75 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
   }
   @page { size: 58mm auto; margin: 0; }
 }
+
+/* ==========================================================================
+   Responsive — compatible with desktop, laptop, iPad and iPhone.
+   Everything above is the desktop baseline (≥1025px) and is left untouched.
+   ========================================================================== */
+
+/* Hamburger toggle + drawer backdrop — hidden on desktop, shown ≤768px. */
+.nav-toggle { display: none; background: none; border: none; font-size: 18px; color: var(--text-secondary); width: 38px; height: 38px; border-radius: 8px; flex-shrink: 0; }
+.nav-toggle:hover { background: var(--surface-color); color: var(--text-color); }
+.sidebar-backdrop { display: none; }
+
+/* iPhone notch / home-indicator safe areas. */
+@supports (padding: env(safe-area-inset-left)) {
+  .sidebar { padding-left: env(safe-area-inset-left); }
+  .header { padding-left: max(24px, env(safe-area-inset-left)); padding-right: max(24px, env(safe-area-inset-right)); }
+  .page { padding-bottom: max(32px, env(safe-area-inset-bottom)); }
+}
+
+/* ---- ≤1024px — iPad / small laptop ------------------------------------- */
+@media (max-width: 1024px) {
+  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+  .grid-3, .split-pos { grid-template-columns: 1fr 1fr; }
+  .split-40-60, .split-45-55 { grid-template-columns: 1fr; }
+  .bom-bottom { grid-template-columns: repeat(2, 1fr); }
+  .sage-pos-order-pane { width: 340px; }
+}
+
+/* ---- ≤768px — phone / iPad portrait split ------------------------------ */
+@media (max-width: 768px) {
+  /* Shell stacks; sidebar becomes an off-canvas drawer. */
+  .app-shell { flex-direction: column; }
+  .sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 1500;
+    width: 264px; max-width: 82vw; transform: translateX(-100%);
+    transition: transform .22s ease; box-shadow: var(--shadow-lg);
+  }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-backdrop { display: block; position: fixed; inset: 0; z-index: 1400; background: rgba(29,28,24,.5); backdrop-filter: blur(2px); }
+  .main { height: auto; min-height: 100vh; width: 100%; }
+  .nav-toggle { display: inline-flex; align-items: center; justify-content: center; }
+  .header { height: auto; min-height: 56px; padding: 8px 14px; gap: 10px; }
+  .header h1 { font-size: 16px; flex: 1; margin-right: auto; }
+  .page { padding: 14px 14px 28px; }
+
+  /* Fixed-viewport layouts go natural-height and stack so the page scrolls. */
+  .expenses-layout, .bom-grid, .sage-pos-layout {
+    height: auto; display: flex; flex-direction: column;
+  }
+  .bom-grid { grid-template-rows: none; }
+  .bom-top, .bom-bottom { grid-template-columns: 1fr; }
+  .sage-pos-order-pane { width: 100%; }
+
+  /* Collapse every multi-column grid to one column. */
+  .grid-2, .grid-3, .kpi-grid, .kpi-grid-3, .split-pos, .row-2 { grid-template-columns: 1fr; }
+
+  /* Modals / toasts / cards fit the small viewport. */
+  .modal { width: 100%; max-height: 92vh; }
+  .modal-overlay { padding: 10px; }
+  .toast-container { left: 12px; right: 12px; top: 12px; }
+  .toast { min-width: 0; width: 100%; }
+  .card { padding: 14px 15px; }
+  .expense-page { max-width: 100%; }
+}
+
+/* ---- ≤480px — small phone --------------------------------------------- */
+@media (max-width: 480px) {
+  .login-card { padding: 32px 22px 26px; }
+  .login-card h2 { font-size: 24px; }
+  .header h1 { font-size: 15px; }
+  /* Inputs ≥16px stop iOS from auto-zooming on focus. */
+  .form-control, .login-field input { font-size: 16px; }
+}

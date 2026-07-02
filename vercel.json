@@ -1,0 +1,8 @@
+{
+  "installCommand": "npm --prefix client install",
+  "buildCommand": "npm --prefix client run build:customer",
+  "outputDirectory": "client/dist-customer",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/customer.html" }
+  ]
+}

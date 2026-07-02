@@ -168,30 +168,28 @@ async function activeStampPromotion() {
   return rows[0] || null;
 }
 
-// Stamp-loyalty status for a customer row. Mirrors loyaltyStatus() on the
-// client: purchased = paid cups, given = free cups already rung, pending = open
-// redemption codes not yet used. available subtracts pending so codes can't be
-// over-minted. Sales are matched by customer_id; rows from before that column
-// existed fall back to a name match so nobody loses earned stamps.
-// `customer.id` may be null (a walk-in name typed at POS with no saved
-// customer record yet) — pass SQL NULL rather than the string "null" so the
-// id branch of the OR safely never matches instead of matching every
-// customer_id-less row.
-async function loyaltyFor(customer, promotion) {
-  if (!customer || !promotion) return { purchased: 0, given: 0, available: 0, pending: 0 };
-  const idParam = customer.id != null ? String(customer.id) : null;
-  const { rows: [c] } = await pool.query(
-    `SELECT
-       COUNT(*) FILTER (WHERE COALESCE(is_free,'0') <> '1') AS purchased,
-       COUNT(*) FILTER (WHERE is_free = '1') AS given
-     FROM salefront
-     WHERE customer_id = $1
-        OR (COALESCE(customer_id, '') = '' AND lower(customer_name) = lower($2))`,
-    [idParam, customer.name || '']
-  );
+// Stamp-loyalty status for a customer. Mirrors loyaltyStatus() on the client:
+// purchased = paid cups, given = free cups already rung, pending = open
+// redemption codes not yet used. available subtracts pending so codes can't
+// be over-minted. customer_id is now a real backfilled FK (see migrate()), so
+// a customerId lookup is authoritative; the name-only path (customerId null)
+// is for POS staff typing a name with no saved customer record yet.
+async function loyaltyFor(customerName, promotion, customerId = null) {
+  if (!customerName || !promotion) return { purchased: 0, given: 0, available: 0, pending: 0 };
+  const { rows: [c] } = customerId
+    ? await pool.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE COALESCE(is_free,'0') <> '1') AS purchased,
+           COUNT(*) FILTER (WHERE is_free = '1') AS given
+         FROM salefront WHERE customer_id = $1`, [customerId])
+    : await pool.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE COALESCE(is_free,'0') <> '1') AS purchased,
+           COUNT(*) FILTER (WHERE is_free = '1') AS given
+         FROM salefront WHERE lower(customer_name) = lower($1)`, [customerName]);
   const { rows: [p] } = await pool.query(
     "SELECT COUNT(*) AS pending FROM redemptions WHERE customer_id = $1 AND status = 'pending' AND expires_at > $2",
-    [idParam, new Date().toISOString()]
+    [customerId, new Date().toISOString()]
   );
   const purchased = Number(c.purchased), given = Number(c.given), pending = Number(p.pending);
   const buyQty = Number(promotion.buy_qty) || 1;
@@ -216,6 +214,20 @@ app.post('/api/customer/line-login', async (req, res) => {
   }
 });
 
+// Menu names for the "favorite menu" picklist shown at registration. Public
+// (no auth) — the registering customer only has a short-lived pre-auth token
+// at this point, and a drink menu isn't sensitive.
+app.get('/api/customer/menu-options', async (_req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT name FROM menuname WHERE status = 'Active' ORDER BY name");
+    res.json(rows.map(r => r.name));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+const GENDER_VALUES = ['M', 'F', 'NA'];
+
 app.post('/api/customer/register', async (req, res) => {
   const header = req.header('Authorization') || '';
   const tok = header.startsWith('Bearer ') ? header.slice(7) : null;
@@ -226,18 +238,24 @@ app.post('/api/customer/register', async (req, res) => {
   } catch {
     return res.status(401).json({ error: 'Registration session required.' });
   }
-  const { phone, name } = req.body || {};
+  const { phone, gender, date_of_birth, favorite_menu } = req.body || {};
   if (!phone || !String(phone).trim()) return res.status(400).json({ error: 'Phone number is required.' });
   try {
     const lineUserId = pending.line_user_id;
+    const profile = {
+      gender: GENDER_VALUES.includes(gender) ? gender : 'NA',
+      date_of_birth: date_of_birth ? String(date_of_birth).trim() : null,
+      favorite_menu: Array.isArray(favorite_menu) ? favorite_menu : []
+    };
     // Match an existing customer by phone (link them), else create a new one.
+    // Name always comes from the LINE profile — the customer never types it.
     const { rows } = await pool.query('SELECT * FROM customers WHERE phone = $1 ORDER BY id LIMIT 1', [String(phone).trim()]);
     let customer = rows[0];
     if (customer) {
-      customer = await updateRow('customers', customer.id, { line_user_id: lineUserId });
+      customer = await updateRow('customers', customer.id, { line_user_id: lineUserId, ...profile });
     } else {
       customer = await insertRow('customers', {
-        name: (name || pending.name || 'Customer').trim(), phone: String(phone).trim(), line_user_id: lineUserId
+        name: (pending.name || 'Customer').trim(), phone: String(phone).trim(), line_user_id: lineUserId, ...profile
       });
     }
     const token = signCustomer({ kind: 'customer', customer_id: customer.id, line_user_id: lineUserId });
@@ -253,13 +271,10 @@ app.get('/api/customer/me', requireCustomer, async (req, res) => {
     const customer = await getRow('customers', req.customer.customer_id);
     if (!customer) return res.status(404).json({ error: 'Customer not found.' });
     const promotion = await activeStampPromotion();
-    const loyalty = await loyaltyFor(customer, promotion);
+    const loyalty = await loyaltyFor(customer.name, promotion, customer.id);
     const { rows: recentOrders } = await pool.query(
-      `SELECT date, menu_name, total_price, is_free FROM salefront
-       WHERE customer_id = $1
-          OR (COALESCE(customer_id, '') = '' AND lower(customer_name) = lower($2))
-       ORDER BY id DESC LIMIT 10`,
-      [String(customer.id), customer.name || '']
+      'SELECT date, menu_name, total_price, is_free FROM salefront WHERE customer_id = $1 ORDER BY id DESC LIMIT 10',
+      [customer.id]
     );
     res.json({ customer, promotion, loyalty, recentOrders });
   } catch (e) {
@@ -273,10 +288,10 @@ app.post('/api/customer/redeem', requireCustomer, async (req, res) => {
     if (!customer) return res.status(404).json({ error: 'Customer not found.' });
     const promotion = await activeStampPromotion();
     if (!promotion) return res.status(400).json({ error: 'No active promotion.' });
-    const loyalty = await loyaltyFor(customer, promotion);
+    const loyalty = await loyaltyFor(customer.name, promotion, customer.id);
     if (loyalty.available < 1) return res.status(409).json({ error: 'No free cups available.' });
     const now = new Date();
-    const expires = new Date(now.getTime() + 30 * 60 * 1000); // +30 min
+    const expires = new Date(now.getTime() + 60 * 60 * 1000); // +1 hr
     // A partial unique index guards against two live codes colliding; on that
     // (rare, 1-in-~900000) chance retry with a freshly rolled code instead of
     // failing the customer's request outright.
@@ -332,7 +347,7 @@ const TABLE_ACCESS = {
   packagingbom: 'bom', matprepbom: 'bom', addons: 'bom',
   customers: 'customers', redemptions: 'pos', salefront: 'pos', shifts: 'pos',
   saledelivery: 'delivery', deliverydaily: 'delivery', deliverymenu: 'delivery',
-  stocklog: 'stock', replenishments: 'stock', expenses: 'expenses'
+  stocklog: 'stock', expenses: 'expenses'
 };
 
 function canWrite(req, table) {
@@ -389,7 +404,8 @@ app.get('/api/loyalty', async (req, res) => {
         customer = rows[0] || { id: null, name: trimmed }; // no saved record yet — still check by name
       }
     }
-    res.json(await loyaltyFor(customer, promotion));
+    if (!customer) return res.json({ purchased: 0, given: 0, available: 0, pending: 0 });
+    res.json(await loyaltyFor(customer.name, promotion, customer.id));
   } catch (e) {
     fail(res, e);
   }
@@ -432,13 +448,27 @@ async function runCheckout(table, body, user) {
     }
     // One order number per checkout (not per cup), so the front register's
     // Sales History can group rows by order instead of guessing from name/date.
+    // Resolve customer_id once per checkout (walk-ins stay null).
+    let resolvedCustomerId = null;
+    if (table === 'salefront' && sales.length) {
+      const custName = (sales[0].customer_name || '').trim();
+      if (custName && custName.toLowerCase() !== 'walk-in') {
+        const { rows: cr } = await client.query(
+          'SELECT id FROM customers WHERE lower(name) = lower($1) LIMIT 1', [custName]);
+        if (cr[0]) resolvedCustomerId = cr[0].id;
+      }
+    }
     let orderNo = null;
     if (table === 'salefront' && sales.length) {
       const { rows: [{ next }] } = await client.query("SELECT nextval('salefront_order_seq') AS next");
       orderNo = String(next).padStart(4, '0');
     }
     const out = [];
-    for (const s of sales) out.push(await insertRow(table, orderNo ? { ...s, order_no: orderNo } : s, client));
+    for (const s of sales) {
+      const row = orderNo ? { ...s, order_no: orderNo } : { ...s };
+      if (table === 'salefront' && resolvedCustomerId != null) row.customer_id = resolvedCustomerId;
+      out.push(await insertRow(table, row, client));
+    }
     // Promo giveaway cups are recorded as a cost (their BOM materials are
     // still deducted above like any other cup) rather than silently eating
     // into margin with no trace.
@@ -768,6 +798,28 @@ app.get('/api/:table', async (req, res) => {
 const MAX_LOGO_LEN = 400 * 1024; // ~300KB of binary data as base64 text
 const logoTooBig = (table, data) => table === 'settings' && typeof data.logo === 'string' && data.logo.length > MAX_LOGO_LEN;
 
+// Per-base-unit cost of a material = pack price / (pack qty * usable yield).
+// Computed server-side so it can never drift from price/qty/yield, regardless
+// of what the client sends.
+function materialUnitPrice({ price, qty, yield: yld }) {
+  const p = Number(price) || 0, q = Number(qty) || 0, y = Number(yld) || 0;
+  return q > 0 && y > 0 ? p / (q * (y / 100)) : 0;
+}
+
+// Staff-assigned customer code: 1 English letter + 3 digits (e.g. A001).
+// Uppercased in place; returns an error message, or null if OK/absent.
+const CUSTOMER_CODE_RE = /^[A-Za-z]\d{3}$/;
+function normalizeCustomerCode(data) {
+  if (data.code === undefined) return null;
+  const raw = String(data.code || '').trim().toUpperCase();
+  if (!raw) { data.code = null; return null; }
+  if (!CUSTOMER_CODE_RE.test(raw)) {
+    return 'รหัสลูกค้าต้องเป็นตัวอักษรภาษาอังกฤษ 1 ตัว ตามด้วยตัวเลข 3 หลัก เช่น A001';
+  }
+  data.code = raw;
+  return null;
+}
+
 app.post('/api/:table', async (req, res) => {
   const { table } = req.params;
   if (!valid(table)) return res.status(404).json({ error: 'Unknown table' });
@@ -776,11 +828,17 @@ app.post('/api/:table', async (req, res) => {
   try {
     const data = { ...req.body };
     if (table === 'users' && data.password) data.password = await hashPassword(data.password);
+    if (table === 'materials') data.unit_price = materialUnitPrice(data);
+    if (table === 'customers') {
+      const codeErr = normalizeCustomerCode(data);
+      if (codeErr) return res.status(400).json({ error: codeErr });
+    }
     let row = await insertRow(table, data);
     if (table === 'users' && row) { const { password, ...safe } = row; row = safe; }
     if (table !== 'systemlog') await logActivity(actor(req), 'DB INSERT', `${table}: ${JSON.stringify(data).slice(0, 120)}`);
     res.json(row);
   } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: 'รหัสลูกค้านี้ถูกใช้งานแล้ว กรุณาใช้รหัสอื่น' });
     fail(res, e);
   }
 });
@@ -796,11 +854,22 @@ app.put('/api/:table/:id', async (req, res) => {
       if (data.password) data.password = await hashPassword(data.password);
       else delete data.password; // keep existing when blank
     }
+    // Recompute unit_price whenever any of its inputs change, merging with the
+    // current row so a partial update (e.g. status-only toggle) leaves it alone.
+    if (table === 'materials' && ['price', 'qty', 'yield'].some(k => data[k] !== undefined)) {
+      const current = await getRow('materials', id);
+      data.unit_price = materialUnitPrice({ ...current, ...data });
+    }
+    if (table === 'customers') {
+      const codeErr = normalizeCustomerCode(data);
+      if (codeErr) return res.status(400).json({ error: codeErr });
+    }
     let row = await updateRow(table, id, data);
     if (table === 'users' && row) { const { password, ...safe } = row; row = safe; }
     if (table !== 'systemlog') await logActivity(actor(req), 'DB UPDATE', `${table}#${id}`);
     res.json(row);
   } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: 'รหัสลูกค้านี้ถูกใช้งานแล้ว กรุณาใช้รหัสอื่น' });
     fail(res, e);
   }
 });
@@ -818,9 +887,22 @@ app.delete('/api/:table/:id', async (req, res) => {
   }
 });
 
-// SPA fallback: serve index.html for any non-API route (client-side routing).
+// Multi-page SPA fallback: each satellite app gets its own HTML shell;
+// all other non-API routes fall back to the Mother app (index.html).
 if (fs.existsSync(CLIENT_DIST)) {
-  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(CLIENT_DIST, 'index.html')));
+  const distFile = (name) => path.join(CLIENT_DIST, name);
+  app.get('/pos.html', (_req, res) => res.sendFile(distFile('pos.html')));
+  app.get('/expense.html', (_req, res) => res.sendFile(distFile('expense.html')));
+  app.get('/customer.html', (_req, res) => res.sendFile(distFile('customer.html')));
+  // If LINE LIFF redirects back to root with liff.state param, forward to the portal.
+  app.get('/', (req, res) => {
+    if ('liff.state' in req.query) {
+      const qs = new URLSearchParams(req.query).toString();
+      return res.redirect(302, `/customer.html?${qs}`);
+    }
+    res.sendFile(distFile('index.html'));
+  });
+  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(distFile('index.html')));
 }
 
 const PORT = process.env.PORT || 4000;

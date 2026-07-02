@@ -58,6 +58,7 @@ export default function App() {
   const { user, logout, settings, pushToast, online } = useData();
   const [tab, setTab] = useState('dashboard');
   const [year, setYear] = useState(2026);
+  const [navOpen, setNavOpen] = useState(false); // mobile sidebar drawer
 
   const canAccess = (access) =>
     user && (user.role === 'Admin' || user.access.split(',').includes(access));
@@ -81,11 +82,13 @@ export default function App() {
   const go = (item) => {
     if (!canAccess(item.access)) { pushToast('Access denied for this section.', 'warning'); return; }
     setTab(item.id);
+    setNavOpen(false); // close the drawer after navigating on mobile
   };
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      {navOpen && <div className="sidebar-backdrop" onClick={() => setNavOpen(false)} />}
+      <aside className={`sidebar ${navOpen ? 'open' : ''}`}>
         <div className="brand">
           <div className="brand-logo">{logo ? <img src={logo} alt="logo" /> : 'K'}</div>
           <div>
@@ -128,6 +131,9 @@ export default function App() {
 
       <div className="main">
         <header className="header">
+          <button className="nav-toggle" onClick={() => setNavOpen(o => !o)} aria-label="Menu">
+            <i className="fa-solid fa-bars"></i>
+          </button>
           <h1>{activeMeta ? activeMeta.label : ''}</h1>
           <div className="header-right">
             {activeTab === 'dashboard' && (

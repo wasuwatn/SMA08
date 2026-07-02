@@ -22,9 +22,21 @@ export default function CustomerPortal() {
   const [pendingToken, setPendingToken] = useState('');
   const [regName, setRegName] = useState('');
   const [regPhone, setRegPhone] = useState('');
+  const [regGender, setRegGender] = useState('NA');
+  const [regDob, setRegDob] = useState('');
+  const [regFavorites, setRegFavorites] = useState([]);
+  const [menuOptions, setMenuOptions] = useState([]);
   const [busy, setBusy] = useState(false);
   const [redeem, setRedeem] = useState(null);    // { code, expires_at }
   const [qrUrl, setQrUrl] = useState('');
+
+  useEffect(() => {
+    customerApi.menuOptions().then(setMenuOptions).catch(() => setMenuOptions([]));
+  }, []);
+
+  const toggleFavorite = (name) => {
+    setRegFavorites(list => list.includes(name) ? list.filter(n => n !== name) : [...list, name]);
+  };
 
   const loadMe = useCallback(async () => {
     const me = await customerApi.me();
@@ -38,18 +50,41 @@ export default function CustomerPortal() {
       const devUser = import.meta.env.VITE_DEV_LINE_USER; // local testing only
       let loginBody;
       if (liffId) {
-        const liff = await loadLiff();
-        await liff.init({ liffId });
-        if (!liff.isLoggedIn()) { liff.login(); return; } // redirects to LINE
+        let liff;
+        try {
+          liff = await loadLiff();
+        } catch {
+          setError('ไม่สามารถโหลด LINE SDK ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต');
+          setPhase('error');
+          return;
+        }
+        try {
+          await liff.init({ liffId });
+        } catch (e) {
+          setError(`LIFF init ล้มเหลว: ${e.message || 'กรุณาตรวจสอบว่า LIFF ID ถูกต้องและโดเมนนี้ได้รับอนุญาตใน LINE Developers Console'}`);
+          setPhase('error');
+          return;
+        }
+        if (!liff.isLoggedIn()) { liff.login({ redirectUri: window.location.href }); return; }
         loginBody = { idToken: liff.getIDToken() };
       } else if (devUser) {
         loginBody = { devLineUserId: devUser, devName: 'Dev Tester' };
       } else {
-        setError('LINE login is not configured (VITE_LIFF_ID missing).');
+        setError('ยังไม่ได้ตั้งค่า VITE_LIFF_ID — กรุณาเปิดหน้านี้ผ่าน LINE');
         setPhase('error');
         return;
       }
-      const res = await customerApi.lineLogin(loginBody);
+      let res;
+      try {
+        res = await customerApi.lineLogin(loginBody);
+      } catch (e) {
+        const hint = e.message === 'Failed to fetch'
+          ? 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบว่า VITE_API_BASE ชี้ไปยัง API server ที่ถูกต้อง'
+          : e.message;
+        setError(hint || 'เข้าสู่ระบบไม่สำเร็จ');
+        setPhase('error');
+        return;
+      }
       if (res.needsRegistration) {
         setPendingToken(res.token);
         setRegName(res.name || '');
@@ -72,7 +107,10 @@ export default function CustomerPortal() {
     setBusy(true);
     setError('');
     try {
-      const res = await customerApi.register({ phone: regPhone.trim(), name: regName.trim() }, pendingToken);
+      const res = await customerApi.register({
+        phone: regPhone.trim(), gender: regGender,
+        date_of_birth: regDob || null, favorite_menu: regFavorites
+      }, pendingToken);
       setToken(res.token);
       await loadMe();
     } catch (e) {
@@ -106,7 +144,10 @@ export default function CustomerPortal() {
       <div className="card" style={{ maxWidth: 360, textAlign: 'center' }}>
         <div className="logo" style={{ margin: '0 auto 12px' }}>K</div>
         <h3>เกิดข้อผิดพลาด</h3>
-        <p className="helper-text">{error}</p>
+        <p className="helper-text" style={{ wordBreak: 'break-word' }}>{error}</p>
+        <button className="btn btn-secondary btn-block" style={{ marginTop: 16 }} onClick={bootstrap}>
+          ลองใหม่อีกครั้ง
+        </button>
       </div>
     </Centered>;
   }
@@ -121,11 +162,33 @@ export default function CustomerPortal() {
         </p>
         {error && <div className="login-error" style={{ marginBottom: 12 }}>{error}</div>}
         <div className="field"><label>ชื่อ</label>
-          <input className="form-control" value={regName} onChange={(e) => setRegName(e.target.value)} placeholder="ชื่อของคุณ" />
+          <input className="form-control" value={regName} disabled readOnly />
         </div>
         <div className="field"><label>เบอร์โทร</label>
           <input className="form-control" type="tel" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} placeholder="08x-xxx-xxxx" autoFocus />
         </div>
+        <div className="field"><label>เพศ</label>
+          <select className="form-control" value={regGender} onChange={(e) => setRegGender(e.target.value)}>
+            <option value="M">ชาย</option>
+            <option value="F">หญิง</option>
+            <option value="NA">ไม่ระบุ</option>
+          </select>
+        </div>
+        <div className="field"><label>วันเกิด</label>
+          <input className="form-control" type="date" value={regDob} onChange={(e) => setRegDob(e.target.value)} />
+        </div>
+        {menuOptions.length > 0 && (
+          <div className="field"><label>ชอบกินเมนูอะไร</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {menuOptions.map(name => (
+                <label key={name} className="badge local" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input type="checkbox" checked={regFavorites.includes(name)} onChange={() => toggleFavorite(name)} />
+                  {name}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
         <button className="btn btn-primary btn-block" type="submit" disabled={busy}>
           {busy ? 'กำลังบันทึก…' : 'เริ่มสะสมแต้ม'}
         </button>
@@ -171,12 +234,13 @@ export default function CustomerPortal() {
         <div className="card" style={{ textAlign: 'center' }}>
           <div className="card-header"><h3>โค้ดแลกแก้วฟรี</h3></div>
           <p className="helper-text">แสดงโค้ดนี้ให้พนักงานที่เคาน์เตอร์</p>
-          {qrUrl && <img src={qrUrl} alt="QR" style={{ width: 200, height: 200, margin: '8px auto' }} />}
+          {qrUrl && <img src={qrUrl} alt="QR" style={{ width: 200, height: 200, margin: '8px auto', display: 'block' }} />}
+          <p className="helper-text" style={{ marginBottom: 4 }}>รหัส</p>
           <div style={{ fontSize: 36, fontWeight: 700, letterSpacing: 6, fontFamily: 'DM Mono, monospace' }}>{redeem.code}</div>
           {redeem.max_free_value > 0 && (
             <p className="helper-text" style={{ marginTop: 8 }}>ใช้กับเมนูราคาไม่เกิน {money(redeem.max_free_value)}</p>
           )}
-          <p className="helper-text">โค้ดหมดอายุใน 30 นาที</p>
+          <p className="helper-text">โค้ดหมดอายุใน 1 ชั่วโมง</p>
         </div>
       )}
 

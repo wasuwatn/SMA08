@@ -113,6 +113,9 @@ export default function POS() {
   // Stamp-loyalty promo (buy_qty cups -> free_qty free, capped at max_free_value)
   const promotion = (data.promotions || []).find(p => p.type === 'stamp' && p.status === 'Active');
   // Resolve the typed name to a customer row so sales/loyalty key on customer_id.
+  // POS doesn't load data.salefront at all (see skipHeavyTables in data.jsx),
+  // so loyalty is looked up from the server instead of computed locally like
+  // the Mother app's loyaltyStatus() (used in CRM.jsx, which does load it).
   const custObj = useMemo(() => {
     const q = customer.trim().toLowerCase();
     return q ? data.customers.find(x => x.name && x.name.trim().toLowerCase() === q) : null;
@@ -453,7 +456,7 @@ export default function POS() {
         salesRows.push({
           date,
           customer_name: customer.trim() || 'Walk-in',
-          customer_id: custObj ? String(custObj.id) : '',
+          customer_id: custObj?.id ?? null,
           payment_method: payMethod,
           shift_id: openShift ? String(openShift.id) : '',
           customer_address: address.trim(),

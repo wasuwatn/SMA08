@@ -18,6 +18,12 @@ export default defineConfig({
       manifest: {
         name: 'KOTEA', short_name: 'KOTEA', display: 'standalone',
         background_color: '#f5f3ea', theme_color: '#5b6236'
+      },
+      // Multi-page app: disable the SPA navigation fallback so that requests
+      // to /pos.html, /expense.html and /customer.html are served from their
+      // own precached shells, not redirected to index.html.
+      workbox: {
+        navigateFallback: null
       }
     })
   ],

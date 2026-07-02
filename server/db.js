@@ -72,14 +72,15 @@ export const TABLE_CONFIG = {
     ddl: `CREATE TABLE IF NOT EXISTS users (
       username TEXT PRIMARY KEY, password TEXT, role TEXT, access TEXT)`
   },
+  // current_theme was dropped (Phase-1 cleanup below) — theme now lives in
+  // localStorage only (see chooseTheme() in Settings.jsx).
   settings: {
     pk: 'id', auto: true,
-    columns: ['id', 'sweetness_levels', 'buyers', 'current_theme', 'logo',
+    columns: ['id', 'sweetness_levels', 'buyers', 'logo',
       'shop_name', 'shop_address', 'shop_phone', 'promptpay_id', 'receipt_footer'],
     ddl: `CREATE TABLE IF NOT EXISTS settings (
-      id SERIAL PRIMARY KEY, sweetness_levels TEXT, buyers TEXT,
-      current_theme TEXT, logo TEXT, shop_name TEXT, shop_address TEXT,
-      shop_phone TEXT, promptpay_id TEXT, receipt_footer TEXT)`
+      id SERIAL PRIMARY KEY, sweetness_levels TEXT, buyers TEXT, logo TEXT,
+      shop_name TEXT, shop_address TEXT, shop_phone TEXT, promptpay_id TEXT, receipt_footer TEXT)`
   },
   materials: {
     pk: 'id', auto: false,
@@ -97,11 +98,16 @@ export const TABLE_CONFIG = {
       id TEXT PRIMARY KEY, name TEXT, category TEXT, front_price DOUBLE PRECISION,
       delivery_price DOUBLE PRECISION, status TEXT)`
   },
+  // `material_id` is a tagged reference disambiguated by its id prefix:
+  //   MAT…  → a real row in `materials`
+  //   PBOM… → a packaging set in `packagingbom` (expanded into its component materials)
+  //   MPRE… → a mat-prep set in `matprepbom` (expanded likewise)
+  // See expandSetItems()/computeRequirements() in client/src/lib/helpers.js.
   bom: {
     pk: 'id', auto: true,
-    columns: ['id', 'menu_name', 'material_id', 'qty_used'],
+    columns: ['id', 'menu_name', 'menu_id', 'material_id', 'qty_used'],
     ddl: `CREATE TABLE IF NOT EXISTS bom (
-      id SERIAL PRIMARY KEY, menu_name TEXT, material_id TEXT, qty_used DOUBLE PRECISION)`
+      id SERIAL PRIMARY KEY, menu_name TEXT, menu_id TEXT, material_id TEXT, qty_used DOUBLE PRECISION)`
   },
   packagingbom: {
     pk: 'id', auto: false,
@@ -146,35 +152,36 @@ export const TABLE_CONFIG = {
   },
   customers: {
     pk: 'id', auto: true,
-    columns: ['id', 'name', 'address', 'gender', 'phone', 'line_user_id'],
+    columns: ['id', 'name', 'address', 'gender', 'phone', 'line_user_id', 'code', 'date_of_birth', 'favorite_menu'],
     ddl: `CREATE TABLE IF NOT EXISTS customers (
       id SERIAL PRIMARY KEY, name TEXT, address TEXT, gender TEXT,
-      phone TEXT, line_user_id TEXT)`
+      phone TEXT, line_user_id TEXT, code TEXT, date_of_birth TEXT, favorite_menu TEXT)`
   },
+  // customer_id is a real INTEGER FK, added (and backfilled from customer_name)
+  // by migrate()'s Phase-2 below rather than the ddl, so it gets the same type
+  // whether the table is brand new or already existed. payment_method/shift_id
+  // are plain TEXT, picked up by the generic "add missing columns" loop.
   salefront: {
     pk: 'id', auto: true,
-    // customer_id / payment_method / shift_id are TEXT so migrate() (which can
-    // only add TEXT columns) produces the same shape on pre-existing databases.
-    columns: ['id', 'date', 'customer_name', 'customer_id', 'customer_address', 'menu_name', 'variant', 'quantity',
+    columns: ['id', 'date', 'customer_name', 'customer_address', 'customer_id', 'menu_name', 'variant', 'quantity',
       'sweetness', 'container', 'addons', 'addon_price', 'total_price', 'cashier', 'order_no',
       'order_type', 'delivery_platform', 'is_free', 'promotion_id', 'payment_method', 'shift_id'],
     ddl: `CREATE TABLE IF NOT EXISTS salefront (
-      id SERIAL PRIMARY KEY, date DATE, customer_name TEXT, customer_id TEXT,
+      id SERIAL PRIMARY KEY, date DATE, customer_name TEXT,
       customer_address TEXT, menu_name TEXT, variant TEXT, quantity INTEGER, sweetness TEXT,
       container TEXT, addons TEXT, addon_price DOUBLE PRECISION, total_price DOUBLE PRECISION, cashier TEXT,
-      order_no TEXT, order_type TEXT, delivery_platform TEXT, is_free TEXT, promotion_id TEXT,
-      payment_method TEXT, shift_id TEXT)`
+      order_no TEXT, order_type TEXT, delivery_platform TEXT, is_free TEXT, promotion_id TEXT)`
   },
   childmenu: {
     pk: 'id', auto: true,
-    columns: ['id', 'menu_name', 'name', 'material_id', 'qty_used', 'price_change'],
+    columns: ['id', 'menu_name', 'menu_id', 'name', 'material_id', 'qty_used', 'price_change'],
     ddl: `CREATE TABLE IF NOT EXISTS childmenu (
       id SERIAL PRIMARY KEY, menu_name TEXT, name TEXT,
       material_id TEXT, qty_used DOUBLE PRECISION, price_change DOUBLE PRECISION DEFAULT 0)`
   },
   saledelivery: {
     pk: 'id', auto: true,
-    columns: ['id', 'date', 'customer_name', 'customer_address', 'raw_order_string',
+    columns: ['id', 'date', 'customer_name', 'customer_address', 'customer_id', 'raw_order_string',
       'base_price', 'discount_tier1', 'discount_type1', 'discount_tier2', 'discount_type2',
       'discount_tier3', 'discount_type3', 'ad_cost', 'gp_amount', 'net_price', 'status', 'cashier',
       'addons', 'addon_price'],
@@ -212,19 +219,17 @@ export const TABLE_CONFIG = {
       id SERIAL PRIMARY KEY, period_start DATE, period_end DATE, menu_name TEXT,
       qty DOUBLE PRECISION, sales DOUBLE PRECISION, source TEXT)`
   },
-  replenishments: {
-    pk: 'id', auto: true,
-    columns: ['id', 'date', 'material_id', 'qty', 'note'],
-    ddl: `CREATE TABLE IF NOT EXISTS replenishments (
-      id SERIAL PRIMARY KEY, date DATE, material_id TEXT, qty DOUBLE PRECISION, note TEXT)`
-  },
+  // `replenishments` was dropped (Phase-1 cleanup below) — superseded by
+  // stocklog and never read/written by the client.
+  // `material_id` here is a real FK (Phase-2), backfilled from mat_barcode;
+  // `replenishment_id` was dropped along with the dead table above.
   expenses: {
     pk: 'id', auto: true,
-    columns: ['id', 'date', 'description', 'amount', 'buyer', 'mat_barcode',
-      'replenishment_id', 'qty', 'unit', 'price', 'category', 'discount', 'shipping_cost', 'note'],
+    columns: ['id', 'date', 'description', 'amount', 'buyer', 'mat_barcode', 'material_id',
+      'qty', 'unit', 'price', 'category', 'discount', 'shipping_cost', 'note'],
     ddl: `CREATE TABLE IF NOT EXISTS expenses (
       id SERIAL PRIMARY KEY, date DATE, description TEXT, amount DOUBLE PRECISION,
-      buyer TEXT, mat_barcode TEXT, replenishment_id INTEGER, qty DOUBLE PRECISION, unit TEXT,
+      buyer TEXT, mat_barcode TEXT, qty DOUBLE PRECISION, unit TEXT,
       price DOUBLE PRECISION, category TEXT, discount DOUBLE PRECISION, shipping_cost DOUBLE PRECISION, note TEXT)`
   },
   // Cash-register shifts. One shift may be open at a time; closing aggregates
@@ -381,7 +386,7 @@ export async function initDb() {
 const COLUMN_TYPE_MIGRATIONS = [
   ['salefront', 'date', 'date'], ['saledelivery', 'date', 'date'],
   ['stocklog', 'date', 'date'], ['expenses', 'date', 'date'],
-  ['deliverydaily', 'date', 'date'], ['replenishments', 'date', 'date'],
+  ['deliverydaily', 'date', 'date'],
   ['deliverymenu', 'period_start', 'date'], ['deliverymenu', 'period_end', 'date'],
   ['systemlog', 'created_at', 'timestamptz'], ['processed_txns', 'created_at', 'timestamptz'],
   ['redemptions', 'created_at', 'timestamptz'], ['redemptions', 'expires_at', 'timestamptz'],
@@ -425,6 +430,37 @@ async function createIndexes() {
 
 // Add any columns present in TABLE_CONFIG but missing from an existing table.
 async function migrate() {
+  // Phase-2 runs FIRST, before the generic loop below: customer_id/menu_id
+  // need real types (INTEGER FK, not TEXT). The generic loop adds anything
+  // still missing as TEXT, so if it ran first it would create these columns
+  // as TEXT and the typed ALTER below would then no-op (IF NOT EXISTS) —
+  // silently leaving them the wrong type forever.
+  // All additive (nullable), backfilled once from matching names/barcodes.
+  for (const sql of [
+    'ALTER TABLE salefront ADD COLUMN IF NOT EXISTS customer_id INTEGER',
+    'ALTER TABLE saledelivery ADD COLUMN IF NOT EXISTS customer_id INTEGER',
+    'ALTER TABLE expenses ADD COLUMN IF NOT EXISTS material_id TEXT',
+    'ALTER TABLE bom ADD COLUMN IF NOT EXISTS menu_id TEXT',
+    'ALTER TABLE childmenu ADD COLUMN IF NOT EXISTS menu_id TEXT'
+  ]) {
+    try { await pool.query(sql); } catch { /* ignore */ }
+  }
+  // One-time backfill: match existing name/barcode strings to their id.
+  for (const sql of [
+    `UPDATE salefront sf SET customer_id = c.id FROM customers c
+       WHERE sf.customer_id IS NULL AND lower(sf.customer_name) = lower(c.name)`,
+    `UPDATE saledelivery sd SET customer_id = c.id FROM customers c
+       WHERE sd.customer_id IS NULL AND lower(sd.customer_name) = lower(c.name)`,
+    `UPDATE expenses e SET material_id = m.id FROM materials m
+       WHERE e.material_id IS NULL AND e.mat_barcode <> '' AND e.mat_barcode = m.mat_barcode`,
+    `UPDATE bom b SET menu_id = m.id FROM menuname m
+       WHERE b.menu_id IS NULL AND lower(b.menu_name) = lower(m.name)`,
+    `UPDATE childmenu c SET menu_id = m.id FROM menuname m
+       WHERE c.menu_id IS NULL AND lower(c.menu_name) = lower(m.name)`
+  ]) {
+    try { await pool.query(sql); } catch { /* ignore */ }
+  }
+
   for (const t of TABLES) {
     const { rows } = await pool.query(
       `SELECT column_name FROM information_schema.columns WHERE table_name = $1`, [t]
@@ -435,6 +471,41 @@ async function migrate() {
         try { await pool.query(`ALTER TABLE ${t} ADD COLUMN ${col} TEXT`); } catch { /* ignore */ }
       }
     }
+  }
+
+  // Phase-1 cleanup: drop dead objects that never carried live data.
+  //  - `replenishments` was superseded by stocklog and never read/written.
+  //  - `expenses.replenishment_id` was always null (referred to the dead table).
+  //  - `settings.current_theme` was write-only; theme lives in localStorage.
+  // All guarded with IF EXISTS so this stays idempotent across boots.
+  for (const sql of [
+    'DROP TABLE IF EXISTS replenishments',
+    'ALTER TABLE expenses DROP COLUMN IF EXISTS replenishment_id',
+    'ALTER TABLE settings DROP COLUMN IF EXISTS current_theme'
+  ]) {
+    try { await pool.query(sql); } catch { /* ignore */ }
+  }
+
+  // Phase-3: staff-assigned customer code (1 letter + 3 digits), unique so it can
+  // reliably identify a customer regardless of what nickname they use on LINE.
+  // Normalize the old free-text gender values ('male'/'female') to the M/F/NA
+  // codes used going forward.
+  for (const sql of [
+    'ALTER TABLE customers ADD CONSTRAINT customers_code_unique UNIQUE (code)',
+    "UPDATE customers SET gender = 'M' WHERE lower(gender) = 'male'",
+    "UPDATE customers SET gender = 'F' WHERE lower(gender) = 'female'"
+  ]) {
+    try { await pool.query(sql); } catch { /* ignore (constraint already exists, etc.) */ }
+  }
+
+  // Phase-4: Supabase flags any table without RLS as "Unrestricted" in its
+  // dashboard. That only matters for Supabase's own REST/GraphQL API
+  // (PostgREST) — this hub never uses it (it talks to Postgres directly via
+  // DATABASE_URL, a superuser role that bypasses RLS regardless). Enabling
+  // RLS with no policies closes that alternate access path with zero effect
+  // on the app itself.
+  for (const sql of TABLES.map(t => `ALTER TABLE ${t} ENABLE ROW LEVEL SECURITY`)) {
+    try { await pool.query(sql); } catch { /* ignore */ }
   }
 }
 
@@ -455,7 +526,7 @@ async function seed() {
 
     await insertRow('settings', {
       sweetness_levels: 'No Sweet, 25%, 50%, 100%',
-      buyers: 'Admin, Staff, Buyer A', current_theme: 'spring', logo: null
+      buyers: 'Admin, Staff, Buyer A', logo: null
     }, client);
 
     const materials = [
@@ -537,9 +608,9 @@ async function seed() {
     }, client);
 
     const customers = [
-      { name: 'John Doe', address: '123 Sukhumvit Rd, Bangkok', gender: 'male' },
-      { name: 'Jane Smith', address: '456 Silom Rd, Bangkok', gender: 'female' },
-      { name: 'Somsak Lee', address: '789 Sathorn Rd, Bangkok', gender: 'male' }
+      { name: 'John Doe', address: '123 Sukhumvit Rd, Bangkok', gender: 'M' },
+      { name: 'Jane Smith', address: '456 Silom Rd, Bangkok', gender: 'F' },
+      { name: 'Somsak Lee', address: '789 Sathorn Rd, Bangkok', gender: 'M' }
     ];
     for (const c of customers) await insertRow('customers', c, client);
 
@@ -564,12 +635,12 @@ async function seed() {
     for (const d of deliveries) await insertRow('saledelivery', d, client);
 
     const expenses = [
-      { date: '2026-01-02', description: 'Arabica Premium Beans 500g', amount: 1750, buyer: 'Admin', mat_barcode: '8850123456789', replenishment_id: null, qty: 5, unit: 'g', price: 350, category: 'Beans', discount: 0, shipping_cost: 0, note: 'Initial stock setup' },
-      { date: '2026-02-15', description: 'Meiji Milk 2L', amount: 950, buyer: 'Staff', mat_barcode: '8850123456790', replenishment_id: null, qty: 10, unit: 'ml', price: 95, category: 'Dairy', discount: 0, shipping_cost: 0, note: 'Stock order' },
-      { date: '2026-03-10', description: 'Rent Payment', amount: 12000, buyer: 'Admin', mat_barcode: '', replenishment_id: null, qty: 1, unit: 'month', price: 12000, category: 'Rent', discount: 0, shipping_cost: 0, note: 'Monthly cafe rent' },
-      { date: '2026-04-05', description: 'Mitr Phol Syrup 1L', amount: 480, buyer: 'Buyer A', mat_barcode: '8850123456792', replenishment_id: null, qty: 8, unit: 'ml', price: 60, category: 'Sweetener', discount: 0, shipping_cost: 0, note: '' },
-      { date: '2026-05-10', description: 'Van Houten Cocoa 500g', amount: 1120, buyer: 'Admin', mat_barcode: '8850123456791', replenishment_id: null, qty: 4, unit: 'g', price: 280, category: 'Powder', discount: 0, shipping_cost: 0, note: '' },
-      { date: '2026-06-02', description: 'Electric Bill', amount: 3450, buyer: 'Admin', mat_barcode: '', replenishment_id: null, qty: 1, unit: 'pcs', price: 3450, category: 'Utility', discount: 0, shipping_cost: 0, note: '' }
+      { date: '2026-01-02', description: 'Arabica Premium Beans 500g', amount: 1750, buyer: 'Admin', mat_barcode: '8850123456789', qty: 5, unit: 'g', price: 350, category: 'Beans', discount: 0, shipping_cost: 0, note: 'Initial stock setup' },
+      { date: '2026-02-15', description: 'Meiji Milk 2L', amount: 950, buyer: 'Staff', mat_barcode: '8850123456790', qty: 10, unit: 'ml', price: 95, category: 'Dairy', discount: 0, shipping_cost: 0, note: 'Stock order' },
+      { date: '2026-03-10', description: 'Rent Payment', amount: 12000, buyer: 'Admin', mat_barcode: '', qty: 1, unit: 'month', price: 12000, category: 'Rent', discount: 0, shipping_cost: 0, note: 'Monthly cafe rent' },
+      { date: '2026-04-05', description: 'Mitr Phol Syrup 1L', amount: 480, buyer: 'Buyer A', mat_barcode: '8850123456792', qty: 8, unit: 'ml', price: 60, category: 'Sweetener', discount: 0, shipping_cost: 0, note: '' },
+      { date: '2026-05-10', description: 'Van Houten Cocoa 500g', amount: 1120, buyer: 'Admin', mat_barcode: '8850123456791', qty: 4, unit: 'g', price: 280, category: 'Powder', discount: 0, shipping_cost: 0, note: '' },
+      { date: '2026-06-02', description: 'Electric Bill', amount: 3450, buyer: 'Admin', mat_barcode: '', qty: 1, unit: 'pcs', price: 3450, category: 'Utility', discount: 0, shipping_cost: 0, note: '' }
     ];
     for (const e of expenses) await insertRow('expenses', e, client);
   });

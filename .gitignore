@@ -8,3 +8,4 @@ server/data/
 client/dev-dist/
 JWT_SECRET.txt
 server/test/.pgdata-test/
+client/dist-customer/

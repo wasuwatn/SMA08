@@ -174,7 +174,7 @@ export default function Delivery() {
         await api.expense({
           expense: {
             date: promoEnd, description: promoDescFor(campaign),
-            category: 'Delivery Promotion', amount, buyer: user.username, mat_barcode: '', replenishment_id: null,
+            category: 'Delivery Promotion', amount, buyer: user.username, mat_barcode: '',
             qty: 1, unit: 'pcs', price: amount, discount: 0, shipping_cost: 0,
             note: `ค่าส่วนลดให้ลูกค้า - ${campaign.label} from Wongnai campaign report, period ${promoStart}–${promoEnd}`
           },
