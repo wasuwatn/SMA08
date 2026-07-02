@@ -1,12 +1,22 @@
 // SMA V08 - Postgres (Supabase) database: schema, seed data and generic CRUD helpers.
 import 'dotenv/config';
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 
+// DATE columns default to parsing into a JS Date object, which then
+// JSON-serializes as a full "YYYY-MM-DDT00:00:00.000Z" timestamp — every
+// day-string comparison in the client (today(), CSV export, exact-match
+// filters) expects a bare "YYYY-MM-DD". Keep DATE as the raw wire string
+// (already "YYYY-MM-DD") instead. TIMESTAMPTZ is left as a Date object: it
+// JSON-serializes to the same ISO format the client already wrote via
+// `new Date().toISOString()`, so no callers need to change.
+types.setTypeParser(1082, (v) => v);
+
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  // Supabase requires SSL; PGSSLMODE=disable lets a local dev Postgres work.
+  ssl: process.env.PGSSLMODE === 'disable' ? false : { rejectUnauthorized: false },
   // Without a cap, a bad DATABASE_URL (wrong host/port, blocked egress) hangs
   // forever with no error — the host just looks like it never started.
   connectionTimeoutMillis: 10000
@@ -64,10 +74,12 @@ export const TABLE_CONFIG = {
   },
   settings: {
     pk: 'id', auto: true,
-    columns: ['id', 'sweetness_levels', 'buyers', 'current_theme', 'logo'],
+    columns: ['id', 'sweetness_levels', 'buyers', 'current_theme', 'logo',
+      'shop_name', 'shop_address', 'shop_phone', 'promptpay_id', 'receipt_footer'],
     ddl: `CREATE TABLE IF NOT EXISTS settings (
       id SERIAL PRIMARY KEY, sweetness_levels TEXT, buyers TEXT,
-      current_theme TEXT, logo TEXT)`
+      current_theme TEXT, logo TEXT, shop_name TEXT, shop_address TEXT,
+      shop_phone TEXT, promptpay_id TEXT, receipt_footer TEXT)`
   },
   materials: {
     pk: 'id', auto: false,
@@ -118,8 +130,8 @@ export const TABLE_CONFIG = {
       'created_at', 'expires_at', 'used_at', 'used_order_no'],
     ddl: `CREATE TABLE IF NOT EXISTS redemptions (
       id SERIAL PRIMARY KEY, code TEXT, customer_id INTEGER, customer_name TEXT,
-      promotion_id INTEGER, status TEXT, created_at TEXT, expires_at TEXT,
-      used_at TEXT, used_order_no TEXT)`
+      promotion_id INTEGER, status TEXT, created_at TIMESTAMPTZ, expires_at TIMESTAMPTZ,
+      used_at TIMESTAMPTZ, used_order_no TEXT)`
   },
   // Promotion rules. Only `type: 'stamp'` (buy_qty cups -> free_qty free cups,
   // capped at max_free_value) is implemented today; `config` is reserved JSON
@@ -141,14 +153,17 @@ export const TABLE_CONFIG = {
   },
   salefront: {
     pk: 'id', auto: true,
-    columns: ['id', 'date', 'customer_name', 'customer_address', 'menu_name', 'variant', 'quantity',
+    // customer_id / payment_method / shift_id are TEXT so migrate() (which can
+    // only add TEXT columns) produces the same shape on pre-existing databases.
+    columns: ['id', 'date', 'customer_name', 'customer_id', 'customer_address', 'menu_name', 'variant', 'quantity',
       'sweetness', 'container', 'addons', 'addon_price', 'total_price', 'cashier', 'order_no',
-      'order_type', 'delivery_platform', 'is_free', 'promotion_id'],
+      'order_type', 'delivery_platform', 'is_free', 'promotion_id', 'payment_method', 'shift_id'],
     ddl: `CREATE TABLE IF NOT EXISTS salefront (
-      id SERIAL PRIMARY KEY, date TEXT, customer_name TEXT,
+      id SERIAL PRIMARY KEY, date DATE, customer_name TEXT, customer_id TEXT,
       customer_address TEXT, menu_name TEXT, variant TEXT, quantity INTEGER, sweetness TEXT,
       container TEXT, addons TEXT, addon_price DOUBLE PRECISION, total_price DOUBLE PRECISION, cashier TEXT,
-      order_no TEXT, order_type TEXT, delivery_platform TEXT, is_free TEXT, promotion_id TEXT)`
+      order_no TEXT, order_type TEXT, delivery_platform TEXT, is_free TEXT, promotion_id TEXT,
+      payment_method TEXT, shift_id TEXT)`
   },
   childmenu: {
     pk: 'id', auto: true,
@@ -164,7 +179,7 @@ export const TABLE_CONFIG = {
       'discount_tier3', 'discount_type3', 'ad_cost', 'gp_amount', 'net_price', 'status', 'cashier',
       'addons', 'addon_price'],
     ddl: `CREATE TABLE IF NOT EXISTS saledelivery (
-      id SERIAL PRIMARY KEY, date TEXT, customer_name TEXT,
+      id SERIAL PRIMARY KEY, date DATE, customer_name TEXT,
       customer_address TEXT, raw_order_string TEXT, base_price DOUBLE PRECISION,
       discount_tier1 TEXT, discount_type1 TEXT, discount_tier2 TEXT, discount_type2 TEXT,
       discount_tier3 TEXT, discount_type3 TEXT, ad_cost DOUBLE PRECISION, gp_amount DOUBLE PRECISION,
@@ -174,7 +189,7 @@ export const TABLE_CONFIG = {
     pk: 'id', auto: true,
     columns: ['id', 'date', 'material_id', 'action', 'qty_changed', 'note'],
     ddl: `CREATE TABLE IF NOT EXISTS stocklog (
-      id SERIAL PRIMARY KEY, date TEXT, material_id TEXT, action TEXT,
+      id SERIAL PRIMARY KEY, date DATE, material_id TEXT, action TEXT,
       qty_changed DOUBLE PRECISION, note TEXT)`
   },
   // Daily delivery sales summary imported from the Wongnai report (one row per
@@ -184,7 +199,7 @@ export const TABLE_CONFIG = {
     pk: 'id', auto: true,
     columns: ['id', 'date', 'gross_sales', 'orders', 'avg_basket', 'gp_amount', 'net_sales', 'source', 'note'],
     ddl: `CREATE TABLE IF NOT EXISTS deliverydaily (
-      id SERIAL PRIMARY KEY, date TEXT, gross_sales DOUBLE PRECISION, orders INTEGER,
+      id SERIAL PRIMARY KEY, date DATE, gross_sales DOUBLE PRECISION, orders INTEGER,
       avg_basket DOUBLE PRECISION, gp_amount DOUBLE PRECISION, net_sales DOUBLE PRECISION,
       source TEXT, note TEXT)`
   },
@@ -194,29 +209,43 @@ export const TABLE_CONFIG = {
     pk: 'id', auto: true,
     columns: ['id', 'period_start', 'period_end', 'menu_name', 'qty', 'sales', 'source'],
     ddl: `CREATE TABLE IF NOT EXISTS deliverymenu (
-      id SERIAL PRIMARY KEY, period_start TEXT, period_end TEXT, menu_name TEXT,
+      id SERIAL PRIMARY KEY, period_start DATE, period_end DATE, menu_name TEXT,
       qty DOUBLE PRECISION, sales DOUBLE PRECISION, source TEXT)`
   },
   replenishments: {
     pk: 'id', auto: true,
     columns: ['id', 'date', 'material_id', 'qty', 'note'],
     ddl: `CREATE TABLE IF NOT EXISTS replenishments (
-      id SERIAL PRIMARY KEY, date TEXT, material_id TEXT, qty DOUBLE PRECISION, note TEXT)`
+      id SERIAL PRIMARY KEY, date DATE, material_id TEXT, qty DOUBLE PRECISION, note TEXT)`
   },
   expenses: {
     pk: 'id', auto: true,
     columns: ['id', 'date', 'description', 'amount', 'buyer', 'mat_barcode',
       'replenishment_id', 'qty', 'unit', 'price', 'category', 'discount', 'shipping_cost', 'note'],
     ddl: `CREATE TABLE IF NOT EXISTS expenses (
-      id SERIAL PRIMARY KEY, date TEXT, description TEXT, amount DOUBLE PRECISION,
+      id SERIAL PRIMARY KEY, date DATE, description TEXT, amount DOUBLE PRECISION,
       buyer TEXT, mat_barcode TEXT, replenishment_id INTEGER, qty DOUBLE PRECISION, unit TEXT,
       price DOUBLE PRECISION, category TEXT, discount DOUBLE PRECISION, shipping_cost DOUBLE PRECISION, note TEXT)`
+  },
+  // Cash-register shifts. One shift may be open at a time; closing aggregates
+  // that shift's salefront rows by payment method into a Z-report snapshot.
+  shifts: {
+    pk: 'id', auto: true,
+    columns: ['id', 'status', 'opened_at', 'opened_by', 'opening_cash',
+      'closed_at', 'closed_by', 'closing_cash', 'expected_cash', 'cash_sales',
+      'promptpay_sales', 'transfer_sales', 'orders', 'over_short', 'note'],
+    ddl: `CREATE TABLE IF NOT EXISTS shifts (
+      id SERIAL PRIMARY KEY, status TEXT, opened_at TIMESTAMPTZ, opened_by TEXT,
+      opening_cash DOUBLE PRECISION, closed_at TIMESTAMPTZ, closed_by TEXT,
+      closing_cash DOUBLE PRECISION, expected_cash DOUBLE PRECISION,
+      cash_sales DOUBLE PRECISION, promptpay_sales DOUBLE PRECISION,
+      transfer_sales DOUBLE PRECISION, orders INTEGER, over_short DOUBLE PRECISION, note TEXT)`
   },
   systemlog: {
     pk: 'id', auto: true,
     columns: ['id', 'created_at', 'username', 'activity', 'details'],
     ddl: `CREATE TABLE IF NOT EXISTS systemlog (
-      id SERIAL PRIMARY KEY, created_at TEXT, username TEXT,
+      id SERIAL PRIMARY KEY, created_at TIMESTAMPTZ, username TEXT,
       activity TEXT, details TEXT)`
   },
   // Idempotency guard for offline-synced writes. The client sends a stable
@@ -225,7 +254,7 @@ export const TABLE_CONFIG = {
   processed_txns: {
     pk: 'id', auto: false,
     columns: ['id', 'created_at'],
-    ddl: `CREATE TABLE IF NOT EXISTS processed_txns (id TEXT PRIMARY KEY, created_at TEXT)`
+    ddl: `CREATE TABLE IF NOT EXISTS processed_txns (id TEXT PRIMARY KEY, created_at TIMESTAMPTZ)`
   }
 };
 
@@ -258,7 +287,7 @@ export async function insertRow(table, data, client = pool) {
     return data[c] !== undefined;
   });
   const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
-  const values = cols.map(c => normalize(data[c]));
+  const values = cols.map(c => normalize(data[c], c));
   const result = await client.query(
     `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders}) RETURNING *`,
     values
@@ -277,7 +306,7 @@ export async function updateRow(table, id, data, client = pool) {
   const cols = cfg.columns.filter(c => c !== cfg.pk && data[c] !== undefined);
   if (cols.length) {
     const setClause = cols.map((c, i) => `${c} = $${i + 1}`).join(', ');
-    const values = cols.map(c => normalize(data[c]));
+    const values = cols.map(c => normalize(data[c], c));
     await client.query(`UPDATE ${table} SET ${setClause} WHERE ${cfg.pk} = $${cols.length + 1}`, [...values, id]);
   }
   return getRow(table, id, client);
@@ -288,12 +317,37 @@ export async function deleteRow(table, id, client = pool) {
   await client.query(`DELETE FROM ${table} WHERE ${cfg.pk} = $1`, [id]);
 }
 
+// Atomically adjust a material's stock by `delta` (negative = deduct). The
+// read-modify-write this replaces could lose updates when two POS devices
+// checked out at the same time. With guard=true the deduction only applies if
+// enough stock remains. Returns:
+//   { ok: true,  item }          — adjusted
+//   { ok: false, missing: true } — material doesn't exist (caller skips)
+//   { ok: false, item }          — guard blocked it (insufficient stock)
+export async function adjustStock(materialId, delta, { client = pool, guard = false } = {}) {
+  const sql = guard
+    ? 'UPDATE materials SET current_stock = current_stock + $1 WHERE id = $2 AND current_stock + $1 >= 0 RETURNING item'
+    : 'UPDATE materials SET current_stock = current_stock + $1 WHERE id = $2 RETURNING item';
+  const r = await client.query(sql, [delta, materialId]);
+  if (r.rowCount) return { ok: true, item: r.rows[0].item };
+  const existing = await client.query('SELECT item FROM materials WHERE id = $1', [materialId]);
+  if (!existing.rowCount) return { ok: false, missing: true };
+  return { ok: false, missing: false, item: existing.rows[0].item };
+}
+
 function isEmpty(v) { return v === undefined || v === null || v === ''; }
 
-function normalize(v) {
+// Columns holding DATE/TIMESTAMPTZ values, by this schema's naming convention:
+// day fields are "date"/"period_start"/"period_end", timestamps end in "_at".
+const isTemporalColumn = (col) =>
+  col === 'date' || col === 'period_start' || col === 'period_end' || col.endsWith('_at');
+
+function normalize(v, col) {
   if (v === undefined || v === null) return null;
   if (typeof v === 'boolean') return v ? 1 : 0;
   if (typeof v === 'object') return JSON.stringify(v);
+  // '' is a normal value for a TEXT column but invalid input for DATE/TIMESTAMPTZ.
+  if (v === '' && col && isTemporalColumn(col)) return null;
   return v;
 }
 
@@ -313,7 +367,60 @@ export async function initDb() {
   // One order (= one POS checkout) gets one number, shared by every cup row it produced.
   await pool.query('CREATE SEQUENCE IF NOT EXISTS salefront_order_seq');
   await migrate();
+  await migrateColumnTypes();
+  await createIndexes();
   await seed();
+}
+
+// Databases created before this version stored every date/timestamp as TEXT.
+// Upgrade them to real DATE/TIMESTAMPTZ columns (matching the ddl above) so
+// range queries (?since/?until) and ORDER BY work correctly instead of doing
+// lexicographic string comparison. NULLIF(...,'') guards old blank strings —
+// plain ::date/::timestamptz would reject '' as invalid input. Idempotent: once
+// a column is no longer 'text' this is a no-op, so it's cheap to run every boot.
+const COLUMN_TYPE_MIGRATIONS = [
+  ['salefront', 'date', 'date'], ['saledelivery', 'date', 'date'],
+  ['stocklog', 'date', 'date'], ['expenses', 'date', 'date'],
+  ['deliverydaily', 'date', 'date'], ['replenishments', 'date', 'date'],
+  ['deliverymenu', 'period_start', 'date'], ['deliverymenu', 'period_end', 'date'],
+  ['systemlog', 'created_at', 'timestamptz'], ['processed_txns', 'created_at', 'timestamptz'],
+  ['redemptions', 'created_at', 'timestamptz'], ['redemptions', 'expires_at', 'timestamptz'],
+  ['redemptions', 'used_at', 'timestamptz'],
+  ['shifts', 'opened_at', 'timestamptz'], ['shifts', 'closed_at', 'timestamptz']
+];
+
+async function migrateColumnTypes() {
+  for (const [table, column, type] of COLUMN_TYPE_MIGRATIONS) {
+    const { rows } = await pool.query(
+      `SELECT data_type FROM information_schema.columns WHERE table_name = $1 AND column_name = $2`,
+      [table, column]
+    );
+    if (rows[0]?.data_type !== 'text') continue; // already migrated (or column absent)
+    try {
+      await pool.query(
+        `ALTER TABLE ${table} ALTER COLUMN ${column} TYPE ${type} USING NULLIF(${column}, '')::${type}`
+      );
+    } catch (e) {
+      console.error(`Column-type migration failed for ${table}.${column} -> ${type}:`, e.message);
+    }
+  }
+}
+
+// Hot lookup paths: dashboard date windows, loyalty by customer, stock history,
+// pending redeem codes. Runs after migrate() so new columns already exist.
+async function createIndexes() {
+  const stmts = [
+    'CREATE INDEX IF NOT EXISTS idx_salefront_date ON salefront (date)',
+    'CREATE INDEX IF NOT EXISTS idx_salefront_customer_name ON salefront (lower(customer_name))',
+    'CREATE INDEX IF NOT EXISTS idx_salefront_customer_id ON salefront (customer_id)',
+    'CREATE INDEX IF NOT EXISTS idx_salefront_shift ON salefront (shift_id)',
+    'CREATE INDEX IF NOT EXISTS idx_stocklog_material ON stocklog (material_id)',
+    // UNIQUE (not just an index): the redeem endpoint retries on a 23505
+    // collision, but that only works if the DB actually rejects duplicates —
+    // two pending codes with the same 6 digits must never coexist.
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_redemptions_pending_code ON redemptions (code) WHERE status = 'pending'"
+  ];
+  for (const s of stmts) await pool.query(s);
 }
 
 // Add any columns present in TABLE_CONFIG but missing from an existing table.

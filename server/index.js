@@ -1,6 +1,7 @@
 // SMA V08 - Express API hub (Supabase Postgres) for the Mother + POS/Expense satellite apps
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
 import fs from 'node:fs';
@@ -8,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   pool, initDb, withTransaction, TABLES, TABLE_CONFIG, listRows, insertRow, getRow,
-  updateRow, deleteRow, hashPassword, verifyPassword, logActivity, claimTxn
+  updateRow, deleteRow, hashPassword, verifyPassword, logActivity, claimTxn, adjustStock
 } from './db.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -36,6 +37,16 @@ const app = express();
 // it, express-rate-limit's login limiter can't safely key by IP.
 app.set('trust proxy', 1);
 
+// Security headers (X-Frame-Options, X-Content-Type-Options, HSTS, etc).
+// CSP is left off deliberately: the client pages pull from several external
+// origins helmet's default policy would block — Google Fonts (fonts.googleapis.com
+// / fonts.gstatic.com), Font Awesome (cdnjs.cloudflare.com), the LINE LIFF SDK
+// (static.line-scdn.net, customer.html), a dynamic import of the Supabase JS
+// client (esm.sh, Settings.jsx cloud-sync), and — since that cloud-sync feature
+// lets a user paste in *any* Supabase project URL — a whitelist can't cover
+// connect-src at all. Revisit if that Supabase sync feature is ever removed.
+app.use(helmet({ contentSecurityPolicy: false }));
+
 // CORS: allow all origins by default (fine when the client is served by this
 // same server). Set CORS_ORIGIN (comma-separated) to restrict in production.
 const corsOrigins = process.env.CORS_ORIGIN
@@ -49,7 +60,26 @@ if (fs.existsSync(CLIENT_DIST)) {
   app.use(express.static(CLIENT_DIST));
 }
 
+// General ceiling on top of the stricter per-route limiters below (login,
+// etc). Generous enough for a shop's own registers bursting behind one NAT'd
+// IP, tight enough to blunt a scripted flood against the whole API surface.
+const apiLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' }
+});
+app.use('/api', apiLimiter);
+
 const valid = (t) => Object.prototype.hasOwnProperty.call(TABLE_CONFIG, t);
+
+// 500s log the real error server-side but never echo it to the client —
+// raw pg/driver messages leak schema and connection details.
+const fail = (res, e) => {
+  console.error(e);
+  res.status(500).json({ error: 'Internal server error.' });
+};
 
 // ---- Auth ----------------------------------------------------------------
 const loginLimiter = rateLimit({
@@ -78,9 +108,12 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       { username: safe.username, role: safe.role, access: safe.access },
       JWT_SECRET, { expiresIn: TOKEN_TTL }
     );
-    res.json({ token, user: safe });
+    // Seeded accounts ship with password == username (admin/admin). Flag them
+    // so the client forces a password change before the app is usable.
+    const mustChangePassword = String(password) === String(user.username);
+    res.json({ token, user: safe, mustChangePassword });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    fail(res, e);
   }
 });
 
@@ -135,21 +168,30 @@ async function activeStampPromotion() {
   return rows[0] || null;
 }
 
-// Stamp-loyalty status for a customer name. Mirrors loyaltyStatus() on the
+// Stamp-loyalty status for a customer row. Mirrors loyaltyStatus() on the
 // client: purchased = paid cups, given = free cups already rung, pending = open
 // redemption codes not yet used. available subtracts pending so codes can't be
-// over-minted.
-async function loyaltyFor(customerName, promotion) {
-  if (!customerName || !promotion) return { purchased: 0, given: 0, available: 0, pending: 0 };
+// over-minted. Sales are matched by customer_id; rows from before that column
+// existed fall back to a name match so nobody loses earned stamps.
+// `customer.id` may be null (a walk-in name typed at POS with no saved
+// customer record yet) — pass SQL NULL rather than the string "null" so the
+// id branch of the OR safely never matches instead of matching every
+// customer_id-less row.
+async function loyaltyFor(customer, promotion) {
+  if (!customer || !promotion) return { purchased: 0, given: 0, available: 0, pending: 0 };
+  const idParam = customer.id != null ? String(customer.id) : null;
   const { rows: [c] } = await pool.query(
     `SELECT
        COUNT(*) FILTER (WHERE COALESCE(is_free,'0') <> '1') AS purchased,
        COUNT(*) FILTER (WHERE is_free = '1') AS given
-     FROM salefront WHERE lower(customer_name) = lower($1)`, [customerName]
+     FROM salefront
+     WHERE customer_id = $1
+        OR (COALESCE(customer_id, '') = '' AND lower(customer_name) = lower($2))`,
+    [idParam, customer.name || '']
   );
   const { rows: [p] } = await pool.query(
-    "SELECT COUNT(*) AS pending FROM redemptions WHERE lower(customer_name) = lower($1) AND status = 'pending' AND expires_at > $2",
-    [customerName, new Date().toISOString()]
+    "SELECT COUNT(*) AS pending FROM redemptions WHERE customer_id = $1 AND status = 'pending' AND expires_at > $2",
+    [idParam, new Date().toISOString()]
   );
   const purchased = Number(c.purchased), given = Number(c.given), pending = Number(p.pending);
   const buyQty = Number(promotion.buy_qty) || 1;
@@ -202,7 +244,7 @@ app.post('/api/customer/register', async (req, res) => {
     await logActivity('customer', 'LINE REGISTER', `${customer.name} (#${customer.id})`);
     res.json({ token, customer });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    fail(res, e);
   }
 });
 
@@ -211,14 +253,17 @@ app.get('/api/customer/me', requireCustomer, async (req, res) => {
     const customer = await getRow('customers', req.customer.customer_id);
     if (!customer) return res.status(404).json({ error: 'Customer not found.' });
     const promotion = await activeStampPromotion();
-    const loyalty = await loyaltyFor(customer.name, promotion);
+    const loyalty = await loyaltyFor(customer, promotion);
     const { rows: recentOrders } = await pool.query(
-      'SELECT date, menu_name, total_price, is_free FROM salefront WHERE lower(customer_name) = lower($1) ORDER BY id DESC LIMIT 10',
-      [customer.name]
+      `SELECT date, menu_name, total_price, is_free FROM salefront
+       WHERE customer_id = $1
+          OR (COALESCE(customer_id, '') = '' AND lower(customer_name) = lower($2))
+       ORDER BY id DESC LIMIT 10`,
+      [String(customer.id), customer.name || '']
     );
     res.json({ customer, promotion, loyalty, recentOrders });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    fail(res, e);
   }
 });
 
@@ -228,18 +273,29 @@ app.post('/api/customer/redeem', requireCustomer, async (req, res) => {
     if (!customer) return res.status(404).json({ error: 'Customer not found.' });
     const promotion = await activeStampPromotion();
     if (!promotion) return res.status(400).json({ error: 'No active promotion.' });
-    const loyalty = await loyaltyFor(customer.name, promotion);
+    const loyalty = await loyaltyFor(customer, promotion);
     if (loyalty.available < 1) return res.status(409).json({ error: 'No free cups available.' });
-    const code = String(Math.floor(100000 + Math.random() * 900000)); // 6-digit
     const now = new Date();
     const expires = new Date(now.getTime() + 30 * 60 * 1000); // +30 min
-    const row = await insertRow('redemptions', {
-      code, customer_id: customer.id, customer_name: customer.name, promotion_id: promotion.id,
-      status: 'pending', created_at: now.toISOString(), expires_at: expires.toISOString()
-    });
+    // A partial unique index guards against two live codes colliding; on that
+    // (rare, 1-in-~900000) chance retry with a freshly rolled code instead of
+    // failing the customer's request outright.
+    let row;
+    for (let attempt = 0; !row && attempt < 5; attempt++) {
+      const code = String(Math.floor(100000 + Math.random() * 900000)); // 6-digit
+      try {
+        row = await insertRow('redemptions', {
+          code, customer_id: customer.id, customer_name: customer.name, promotion_id: promotion.id,
+          status: 'pending', created_at: now.toISOString(), expires_at: expires.toISOString()
+        });
+      } catch (e) {
+        if (e.code !== '23505') throw e; // not a code collision — a real failure
+      }
+    }
+    if (!row) return res.status(500).json({ error: 'Could not generate a redemption code, please try again.' });
     res.json({ code: row.code, expires_at: row.expires_at, max_free_value: promotion.max_free_value });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    fail(res, e);
   }
 });
 
@@ -264,7 +320,80 @@ app.use('/api', (req, res, next) => {
 const actor = (req) => req.user?.username || 'system';
 const isAdmin = (req) => req.user?.role === 'Admin';
 
+// ---- Table-level write authorization --------------------------------------
+// Mirrors the access flags in users.access that the client uses to hide pages;
+// before this map existed the flags were cosmetic — any staff token could write
+// any table (including users, i.e. self-promote to Admin). Reads stay open to
+// all staff (dashboards need them), except the users table.
+const TABLE_ACCESS = {
+  users: 'ADMIN', systemlog: 'ADMIN', processed_txns: 'ADMIN',
+  settings: 'settings', promotions: 'promotions',
+  materials: 'materials', menuname: 'bom', bom: 'bom', childmenu: 'bom',
+  packagingbom: 'bom', matprepbom: 'bom', addons: 'bom',
+  customers: 'customers', redemptions: 'pos', salefront: 'pos', shifts: 'pos',
+  saledelivery: 'delivery', deliverydaily: 'delivery', deliverymenu: 'delivery',
+  stocklog: 'stock', replenishments: 'stock', expenses: 'expenses'
+};
+
+function canWrite(req, table) {
+  if (isAdmin(req)) return true;
+  const need = TABLE_ACCESS[table];
+  if (!need || need === 'ADMIN') return false;
+  return String(req.user?.access || '').split(',').map(s => s.trim()).includes(need);
+}
+
+const forbidden = (res) => res.status(403).json({ error: 'You do not have permission for this action.' });
+
+// Self-service password change (any authenticated staff account). Used by the
+// forced-change flow when someone logs in with a default password.
+app.post('/api/auth/change-password', async (req, res) => {
+  const { currentPassword = '', newPassword = '' } = req.body || {};
+  if (String(newPassword).length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+  }
+  if (String(newPassword) === String(req.user.username)) {
+    return res.status(400).json({ error: 'Password cannot be the same as the username.' });
+  }
+  try {
+    const { rows } = await pool.query('SELECT * FROM users WHERE username = $1', [req.user.username]);
+    const user = rows[0];
+    const { ok } = await verifyPassword(currentPassword, user && user.password);
+    if (!user || !ok) return res.status(401).json({ error: 'Current password is incorrect.' });
+    await updateRow('users', user.username, { password: await hashPassword(newPassword) });
+    await logActivity(user.username, 'PASSWORD CHANGE', 'User changed own password');
+    res.json({ ok: true });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
 app.get('/api/tables', (_req, res) => res.json(TABLES));
+
+// Stamp-loyalty lookup for the POS register: given a customer_id or a typed
+// name, return the same { purchased, given, pending, available } shape the
+// LINE portal sees (loyaltyFor already accounts for pending self-redeem
+// codes, which the old client-only loyaltyStatus() calculation did not).
+// Lets POS look up one customer's stamps without loading the whole
+// salefront table into the browser.
+app.get('/api/loyalty', async (req, res) => {
+  try {
+    const promotion = await activeStampPromotion();
+    if (!promotion) return res.json({ purchased: 0, given: 0, available: 0, pending: 0 });
+    const { customer_id, name } = req.query;
+    let customer = null;
+    if (customer_id) customer = await getRow('customers', customer_id);
+    if (!customer && name) {
+      const trimmed = String(name).trim();
+      if (trimmed && trimmed !== 'Walk-in') {
+        const { rows } = await pool.query('SELECT * FROM customers WHERE lower(name) = lower($1) ORDER BY id LIMIT 1', [trimmed]);
+        customer = rows[0] || { id: null, name: trimmed }; // no saved record yet — still check by name
+      }
+    }
+    res.json(await loyaltyFor(customer, promotion));
+  } catch (e) {
+    fail(res, e);
+  }
+});
 
 // ---- Checkout (transactional stock deduction) ----------------------------
 // body: { sales:[{...}], requirements:[{material_id, qty, note}], date }
@@ -285,20 +414,16 @@ async function runCheckout(table, body, user) {
         throw err;
       }
     }
-    if (!force) {
-      for (const r of requirements) {
-        const mat = await getRow('materials', r.material_id, client);
-        if (mat && mat.current_stock < r.qty) {
-          const err = new Error('INSUFFICIENT_STOCK');
-          err.material = mat.item;
-          throw err;
-        }
-      }
-    }
     for (const r of requirements) {
-      const mat = await getRow('materials', r.material_id, client);
-      if (!mat) continue;
-      await updateRow('materials', r.material_id, { current_stock: mat.current_stock - r.qty }, client);
+      // Atomic deduct-with-guard: the guard rides on the UPDATE itself so two
+      // concurrent checkouts can't both pass a stale read and lose an update.
+      const adj = await adjustStock(r.material_id, -r.qty, { client, guard: !force });
+      if (adj.missing) continue; // unknown material — nothing to deduct
+      if (!adj.ok) {
+        const err = new Error('INSUFFICIENT_STOCK');
+        err.material = adj.item;
+        throw err;
+      }
       await insertRow('stocklog', {
         date: date || new Date().toISOString().split('T')[0],
         material_id: r.material_id, action: 'Sale Deduction',
@@ -332,11 +457,12 @@ async function runCheckout(table, body, user) {
 }
 
 app.post('/api/checkout/pos', async (req, res) => {
+  if (!canWrite(req, 'salefront')) return forbidden(res);
   try { res.json(await runCheckout('salefront', req.body, actor(req))); }
   catch (e) {
     if (e.message === 'INSUFFICIENT_STOCK') return res.status(409).json({ error: 'Insufficient stock', material: e.material });
     if (e.message === 'REDEMPTION_INVALID') return res.status(409).json({ error: 'Redemption code already used or expired.' });
-    res.status(500).json({ error: e.message });
+    fail(res, e);
   }
 });
 
@@ -348,7 +474,9 @@ app.get('/api/redemption/:code', async (req, res) => {
     const { rows } = await pool.query("SELECT * FROM redemptions WHERE code = $1 AND status = 'pending' ORDER BY id DESC LIMIT 1", [req.params.code]);
     const r = rows[0];
     if (!r) return res.status(404).json({ error: 'Code not found or already used.' });
-    if (r.expires_at && r.expires_at < new Date().toISOString()) {
+    // expires_at is TIMESTAMPTZ (comes back as a Date object) — compare as
+    // timestamps, not strings, or `Date < isoString` silently never expires.
+    if (r.expires_at && new Date(r.expires_at).getTime() < Date.now()) {
       await updateRow('redemptions', r.id, { status: 'expired' });
       return res.status(404).json({ error: 'Code expired.' });
     }
@@ -356,15 +484,16 @@ app.get('/api/redemption/:code', async (req, res) => {
     res.json({ id: r.id, code: r.code, customer_name: r.customer_name, customer_id: r.customer_id,
       promotion_id: r.promotion_id, max_free_value: promo ? promo.max_free_value : null });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    fail(res, e);
   }
 });
 
 app.post('/api/checkout/delivery', async (req, res) => {
+  if (!canWrite(req, 'saledelivery')) return forbidden(res);
   try { res.json(await runCheckout('saledelivery', req.body, actor(req))); }
   catch (e) {
     if (e.message === 'INSUFFICIENT_STOCK') return res.status(409).json({ error: 'Insufficient stock', material: e.material });
-    res.status(500).json({ error: e.message });
+    fail(res, e);
   }
 });
 
@@ -382,6 +511,7 @@ app.post('/api/checkout/delivery', async (req, res) => {
 const DELIVERY_GP_RATE = 0.321;
 
 app.post('/api/import/delivery', async (req, res) => {
+  if (!canWrite(req, 'deliverydaily')) return forbidden(res);
   const {
     daily = [], menu = [], newMenus = [], requirements = [],
     period = {}, source = 'Wongnai'
@@ -443,9 +573,8 @@ app.post('/api/import/delivery', async (req, res) => {
       let deducted = 0;
       if (firstImport) {
         for (const r of requirements) {
-          const mat = await getRow('materials', r.material_id, client);
-          if (!mat) continue;
-          await updateRow('materials', r.material_id, { current_stock: mat.current_stock - r.qty }, client);
+          const adj = await adjustStock(r.material_id, -r.qty, { client });
+          if (!adj.ok) continue;
           await insertRow('stocklog', {
             date: period.end || new Date().toISOString().split('T')[0],
             material_id: r.material_id, action: 'Delivery Import',
@@ -460,22 +589,22 @@ app.post('/api/import/delivery', async (req, res) => {
       `delivery ${period.start || ''}–${period.end || ''}: ${result.days} day(s), ${result.menuRows} menu row(s)`);
     res.json(result);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    fail(res, e);
   }
 });
 
 // ---- Expense + optional restock (transactional) --------------------------
 // body: { expense:{...}, restock:{material_id, increment}|null, client_txn_id? }
 app.post('/api/expense', async (req, res) => {
+  if (!canWrite(req, 'expenses')) return forbidden(res);
   const { expense, restock, client_txn_id } = req.body;
   try {
     const row = await withTransaction(async (client) => {
       if (!(await claimTxn(client_txn_id, client))) return { duplicate: true }; // already synced
       const row = await insertRow('expenses', expense, client);
       if (restock && restock.material_id) {
-        const mat = await getRow('materials', restock.material_id, client);
-        if (mat) {
-          await updateRow('materials', restock.material_id, { current_stock: mat.current_stock + restock.increment }, client);
+        const adj = await adjustStock(restock.material_id, restock.increment, { client });
+        if (adj.ok) {
           await insertRow('stocklog', {
             date: expense.date, material_id: restock.material_id, action: 'Replenishment',
             qty_changed: restock.increment, note: `Expense #${row.id} replenishment`
@@ -487,7 +616,90 @@ app.post('/api/expense', async (req, res) => {
     await logActivity(actor(req), 'EXPENSE', expense.description || '');
     res.json(row);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    fail(res, e);
+  }
+});
+
+// ---- Register shifts (open / close with Z-report) -------------------------
+// One shift may be open at a time. POS stamps each sale row with the open
+// shift's id, so closing aggregates exactly the rows rung during the shift.
+const SHIFT_LOCK_KEY = 823401; // arbitrary advisory-lock key for open/close races
+
+app.get('/api/shift/current', async (_req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM shifts WHERE status = 'open' ORDER BY id DESC LIMIT 1");
+    res.json(rows[0] || null);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+app.post('/api/shift/open', async (req, res) => {
+  if (!canWrite(req, 'shifts')) return forbidden(res);
+  const openingCash = Number(req.body?.opening_cash) || 0;
+  try {
+    const row = await withTransaction(async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock($1)', [SHIFT_LOCK_KEY]);
+      const { rows } = await client.query("SELECT id FROM shifts WHERE status = 'open' LIMIT 1");
+      if (rows.length) throw new Error('SHIFT_ALREADY_OPEN');
+      return insertRow('shifts', {
+        status: 'open', opened_at: new Date().toISOString(),
+        opened_by: actor(req), opening_cash: openingCash
+      }, client);
+    });
+    await logActivity(actor(req), 'SHIFT OPEN', `Shift #${row.id}, opening float ${openingCash}`);
+    res.json(row);
+  } catch (e) {
+    if (e.message === 'SHIFT_ALREADY_OPEN') return res.status(409).json({ error: 'A shift is already open.' });
+    fail(res, e);
+  }
+});
+
+app.post('/api/shift/close', async (req, res) => {
+  if (!canWrite(req, 'shifts')) return forbidden(res);
+  const { closing_cash = null, note = '' } = req.body || {};
+  try {
+    const summary = await withTransaction(async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock($1)', [SHIFT_LOCK_KEY]);
+      const { rows } = await client.query("SELECT * FROM shifts WHERE status = 'open' ORDER BY id DESC LIMIT 1");
+      const shift = rows[0];
+      if (!shift) throw new Error('NO_OPEN_SHIFT');
+      // Sales with no payment_method (offline rows queued before the cashier
+      // picked one, or legacy clients) are counted as cash — the safe default
+      // for reconciling the drawer.
+      const { rows: [agg] } = await client.query(
+        `SELECT
+           COALESCE(SUM(total_price) FILTER (WHERE COALESCE(NULLIF(payment_method, ''), 'Cash') = 'Cash'), 0) AS cash_sales,
+           COALESCE(SUM(total_price) FILTER (WHERE payment_method = 'PromptPay'), 0) AS promptpay_sales,
+           COALESCE(SUM(total_price) FILTER (WHERE payment_method = 'Transfer'), 0) AS transfer_sales,
+           COALESCE(SUM(total_price), 0) AS total_sales,
+           COUNT(DISTINCT order_no) AS orders,
+           COUNT(*) AS cups,
+           COUNT(*) FILTER (WHERE is_free = '1') AS free_cups
+         FROM salefront WHERE shift_id = $1`, [String(shift.id)]
+      );
+      const cashSales = Number(agg.cash_sales);
+      const expected = Number(shift.opening_cash || 0) + cashSales;
+      const closingCash = (closing_cash === null || closing_cash === '') ? null : Number(closing_cash);
+      const updated = await updateRow('shifts', shift.id, {
+        status: 'closed', closed_at: new Date().toISOString(), closed_by: actor(req),
+        closing_cash: closingCash, expected_cash: expected, cash_sales: cashSales,
+        promptpay_sales: Number(agg.promptpay_sales), transfer_sales: Number(agg.transfer_sales),
+        orders: Number(agg.orders), over_short: closingCash === null ? null : closingCash - expected,
+        note: String(note || '')
+      }, client);
+      return {
+        shift: updated,
+        totals: {
+          total_sales: Number(agg.total_sales), cups: Number(agg.cups), free_cups: Number(agg.free_cups)
+        }
+      };
+    });
+    await logActivity(actor(req), 'SHIFT CLOSE', `Shift #${summary.shift.id}`);
+    res.json(summary);
+  } catch (e) {
+    if (e.message === 'NO_OPEN_SHIFT') return res.status(409).json({ error: 'No open shift.' });
+    fail(res, e);
   }
 });
 
@@ -499,7 +711,7 @@ app.get('/api/backup', async (req, res) => {
     for (const t of TABLES) out[t] = await listRows(t);
     res.json(out);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    fail(res, e);
   }
 });
 
@@ -518,58 +730,91 @@ app.post('/api/restore', async (req, res) => {
     await logActivity(actor(req), 'RESTORE', 'JSON backup restored');
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    fail(res, e);
   }
 });
 
 // ---- Generic CRUD (registered last so specific routes take priority) -----
+// GET supports optional windowing on tables that have a `date` column
+// (?since=YYYY-MM-DD&until=YYYY-MM-DD) plus ?limit=N (newest first) so clients
+// don't have to pull a whole table once history grows.
 app.get('/api/:table', async (req, res) => {
   const { table } = req.params;
   if (!valid(table)) return res.status(404).json({ error: 'Unknown table' });
-  try { res.json(await listRows(table)); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  if (table === 'users' && !isAdmin(req)) return forbidden(res);
+  try {
+    const cfg = TABLE_CONFIG[table];
+    const where = [];
+    const params = [];
+    if (cfg.columns.includes('date')) {
+      const { since, until } = req.query;
+      if (since) { params.push(String(since)); where.push(`date >= $${params.length}`); }
+      if (until) { params.push(String(until)); where.push(`date <= $${params.length}`); }
+    }
+    let sql = `SELECT * FROM ${table}` + (where.length ? ` WHERE ${where.join(' AND ')}` : '');
+    const limit = parseInt(req.query.limit, 10);
+    if (Number.isFinite(limit) && limit > 0) sql += ` ORDER BY ${cfg.pk} DESC LIMIT ${limit}`;
+    const { rows } = await pool.query(sql, params);
+    // Never ship password hashes to the browser, even to admins.
+    res.json(table === 'users' ? rows.map(({ password, ...r }) => r) : rows);
+  } catch (e) {
+    fail(res, e);
+  }
 });
+
+// The settings.logo column holds a base64 data URL fetched on every login —
+// mirrors the client-side cap in Settings.jsx but enforced here too, since a
+// client isn't trusted to police its own uploads.
+const MAX_LOGO_LEN = 400 * 1024; // ~300KB of binary data as base64 text
+const logoTooBig = (table, data) => table === 'settings' && typeof data.logo === 'string' && data.logo.length > MAX_LOGO_LEN;
 
 app.post('/api/:table', async (req, res) => {
   const { table } = req.params;
   if (!valid(table)) return res.status(404).json({ error: 'Unknown table' });
+  if (!canWrite(req, table)) return forbidden(res);
+  if (logoTooBig(table, req.body || {})) return res.status(413).json({ error: 'Logo image is too large.' });
   try {
     const data = { ...req.body };
     if (table === 'users' && data.password) data.password = await hashPassword(data.password);
-    const row = await insertRow(table, data);
+    let row = await insertRow(table, data);
+    if (table === 'users' && row) { const { password, ...safe } = row; row = safe; }
     if (table !== 'systemlog') await logActivity(actor(req), 'DB INSERT', `${table}: ${JSON.stringify(data).slice(0, 120)}`);
     res.json(row);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    fail(res, e);
   }
 });
 
 app.put('/api/:table/:id', async (req, res) => {
   const { table, id } = req.params;
   if (!valid(table)) return res.status(404).json({ error: 'Unknown table' });
+  if (!canWrite(req, table)) return forbidden(res);
+  if (logoTooBig(table, req.body || {})) return res.status(413).json({ error: 'Logo image is too large.' });
   try {
     const data = { ...req.body };
     if (table === 'users') {
       if (data.password) data.password = await hashPassword(data.password);
       else delete data.password; // keep existing when blank
     }
-    const row = await updateRow(table, id, data);
+    let row = await updateRow(table, id, data);
+    if (table === 'users' && row) { const { password, ...safe } = row; row = safe; }
     if (table !== 'systemlog') await logActivity(actor(req), 'DB UPDATE', `${table}#${id}`);
     res.json(row);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    fail(res, e);
   }
 });
 
 app.delete('/api/:table/:id', async (req, res) => {
   const { table, id } = req.params;
   if (!valid(table)) return res.status(404).json({ error: 'Unknown table' });
+  if (!canWrite(req, table)) return forbidden(res);
   try {
     await deleteRow(table, id);
     if (table !== 'systemlog') await logActivity(actor(req), 'DB DELETE', `${table}#${id}`);
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    fail(res, e);
   }
 });
 

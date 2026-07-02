@@ -8,7 +8,7 @@ import './styles.css';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <DataProvider>
+    <DataProvider skipHeavyTables>
       <SatelliteApp title="KOTEA POS" icon="fa-cash-register" access="pos" Page={POS} />
     </DataProvider>
   </React.StrictMode>

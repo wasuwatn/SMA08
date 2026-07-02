@@ -1,7 +1,23 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import QRCode from 'qrcode';
 import { useData } from '../lib/data.jsx';
 import { api } from '../lib/api.js';
-import { money, today, computeRequirements, computeCupCost, loyaltyStatus } from '../lib/helpers.js';
+import { money, today, computeRequirements, computeCupCost } from '../lib/helpers.js';
+import { promptpayPayload } from '../lib/promptpay.js';
+import Receipt from '../components/Receipt.jsx';
+import Modal from '../components/Modal.jsx';
+import DrinkCustomizerModal from '../components/pos/DrinkCustomizerModal.jsx';
+import SalesHistoryModal from '../components/pos/SalesHistoryModal.jsx';
+import ShiftModals from '../components/pos/ShiftModals.jsx';
+
+// How far back POS keeps its own local Sales History / shift-cash lookback.
+// POS doesn't load the full salefront table (see skipHeavyTables in
+// data.jsx) — a shift never runs longer than this, so it's plenty for both
+// the history overlay and the close-shift cash estimate.
+const HISTORY_WINDOW_DAYS = 14;
+const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().split('T')[0]; };
+
+const PAY_METHODS = ['Cash', 'PromptPay', 'Transfer'];
 
 const CONTAINERS = [
   { value: 'Ice', label: 'Ice', adj: 0 },
@@ -10,7 +26,7 @@ const CONTAINERS = [
 ];
 
 export default function POS() {
-  const { user, data, settings, pushToast, checkoutPos } = useData();
+  const { user, data, settings, pushToast, checkoutPos, reload } = useData();
   const drinks = data.menuname.filter(d => d.status === 'Active');
   const categories = ['All', ...new Set(drinks.map(d => d.category))];
   const sweetnessLevels = (settings.sweetness_levels || 'No Sweet, 25%, 50%, 100%').split(',').map(s => s.trim());
@@ -47,6 +63,37 @@ export default function POS() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedHistoryOrder, setSelectedHistoryOrder] = useState(null);
 
+  // Payment
+  const [payMethod, setPayMethod] = useState('Cash');
+  const [cashReceived, setCashReceived] = useState('');
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState('');
+
+  // Receipt printing: receiptData mounts the hidden 58mm slip and prints it;
+  // lastReceipt keeps the most recent sale around for a reprint.
+  const [receiptData, setReceiptData] = useState(null);
+  const [lastReceipt, setLastReceipt] = useState(null);
+
+  // Register shift
+  const [shiftModal, setShiftModal] = useState(null); // 'open' | 'close' | null
+  const [shiftCash, setShiftCash] = useState('');
+  const [shiftNote, setShiftNote] = useState('');
+  const [zReport, setZReport] = useState(null); // /api/shift/close response
+
+  // Recent sales (last HISTORY_WINDOW_DAYS) fetched on demand — POS keeps its
+  // own small window instead of the shared data.salefront cache, which the
+  // satellite apps skip loading (see skipHeavyTables in data.jsx).
+  const [recentSales, setRecentSales] = useState([]);
+  const refreshRecentSales = useCallback(() => {
+    api.list('salefront', { since: daysAgo(HISTORY_WINDOW_DAYS) }).then(setRecentSales).catch(() => {});
+  }, []);
+  useEffect(() => { refreshRecentSales(); }, [refreshRecentSales]);
+
+  // Stamp-loyalty status for the typed/selected customer, looked up from the
+  // server (accounts for pending LINE redeem codes too) instead of scanning
+  // the full sales table client-side.
+  const [loyalty, setLoyalty] = useState({ purchased: 0, given: 0, available: 0, pending: 0 });
+
   // Filtered drink catalog
   const shown = cat === 'All' ? drinks : drinks.filter(d => d.category === cat);
 
@@ -65,7 +112,22 @@ export default function POS() {
 
   // Stamp-loyalty promo (buy_qty cups -> free_qty free, capped at max_free_value)
   const promotion = (data.promotions || []).find(p => p.type === 'stamp' && p.status === 'Active');
-  const loyalty = useMemo(() => loyaltyStatus(customer, data.salefront, promotion), [customer, data.salefront, promotion]);
+  // Resolve the typed name to a customer row so sales/loyalty key on customer_id.
+  const custObj = useMemo(() => {
+    const q = customer.trim().toLowerCase();
+    return q ? data.customers.find(x => x.name && x.name.trim().toLowerCase() === q) : null;
+  }, [customer, data.customers]);
+  useEffect(() => {
+    if (!promotion) { setLoyalty({ purchased: 0, given: 0, available: 0, pending: 0 }); return; }
+    const name = customer.trim();
+    if (!name || name === 'Walk-in') { setLoyalty({ purchased: 0, given: 0, available: 0, pending: 0 }); return; }
+    // Small debounce so typing a fresh name doesn't fire a request per keystroke.
+    const t = setTimeout(() => {
+      const params = custObj ? { customer_id: custObj.id } : { name };
+      api.loyalty(params).then(setLoyalty).catch(() => {});
+    }, 250);
+    return () => clearTimeout(t);
+  }, [custObj, customer, promotion]);
   const freeUsedInCart = cart.reduce((s, item) => s + (item.isFree ? item.qty : 0), 0);
   const freeRemaining = Math.max(0, loyalty.available - freeUsedInCart);
   const eligibleForFree = selected && promotion ? Number(selected.front_price) <= Number(promotion.max_free_value) : false;
@@ -89,11 +151,28 @@ export default function POS() {
     return cartSubtotal - discountAmount;
   }, [cartSubtotal, discountAmount]);
 
+  // Cash tendered → change due (only meaningful for cash payments).
+  const received = parseFloat(cashReceived);
+  const changeDue = Number.isFinite(received) ? received - cartTotal : null;
+
+  // Current register shift (one may be open at a time; cached with the rest of
+  // the catalog so the indicator works offline too).
+  const openShift = (data.shifts || []).find(s => s.status === 'open') || null;
+
+  // PromptPay QR for the current total, generated when the modal opens.
+  useEffect(() => {
+    if (!qrOpen) return;
+    if (!settings.promptpay_id) { setQrDataUrl(''); return; }
+    QRCode.toDataURL(promptpayPayload(settings.promptpay_id, cartTotal), { width: 280, margin: 1 })
+      .then(setQrDataUrl)
+      .catch(() => setQrDataUrl(''));
+  }, [qrOpen, cartTotal, settings.promptpay_id]);
+
   // Sales history grouping: one entry per checkout (order_no), not per customer
   // name. Rows from before order_no existed each become their own single-line
   // order, since there's no reliable way to regroup them after the fact.
   const orders = useMemo(() => {
-    const sorted = [...data.salefront].sort((a, b) => a.id - b.id);
+    const sorted = [...recentSales].sort((a, b) => a.id - b.id);
     const byKey = new Map();
 
     for (const row of sorted) {
@@ -111,6 +190,7 @@ export default function POS() {
           customer_address: row.customer_address || '',
           order_type: row.order_type || '',
           delivery_platform: row.delivery_platform || '',
+          payment_method: row.payment_method || '',
           cashier: row.cashier,
           total: 0,
           lines: []
@@ -133,7 +213,7 @@ export default function POS() {
       order.total += lineTotal;
     }
     return [...byKey.values()].reverse();
-  }, [data.salefront]);
+  }, [recentSales]);
 
   // Today's summary stats shown in the Sales History
   const historyStats = useMemo(() => {
@@ -291,11 +371,59 @@ export default function POS() {
     }
   };
 
+  // ---- Register shift open / close ----------------------------------------
+  const doOpenShift = async () => {
+    try {
+      await api.shiftOpen(parseFloat(shiftCash) || 0);
+      await reload(['shifts']);
+      setShiftModal(null);
+      pushToast('Shift opened.', 'success');
+    } catch (e) {
+      pushToast(e.message || 'Could not open shift.', 'warning');
+    }
+  };
+
+  const doCloseShift = async () => {
+    try {
+      const r = await api.shiftClose(shiftCash === '' ? null : parseFloat(shiftCash), shiftNote);
+      await reload(['shifts']);
+      setShiftModal(null);
+      setZReport(r);
+    } catch (e) {
+      pushToast(e.message || 'Could not close shift.', 'warning');
+    }
+  };
+
+  // Client-side estimate of the open shift's cash so the close dialog can show
+  // the expected drawer before the server computes the authoritative Z-report.
+  const shiftCashEstimate = useMemo(() => {
+    if (!openShift) return 0;
+    return recentSales
+      .filter(s => String(s.shift_id || '') === String(openShift.id))
+      .filter(s => !s.payment_method || s.payment_method === 'Cash')
+      .reduce((sum, s) => sum + (Number(s.total_price) || 0), 0);
+  }, [openShift, recentSales]);
+
+  // Reprint a past order from the Sales History overlay.
+  const printHistoryOrder = (o) => setReceiptData({
+    kind: 'sale', orderLabel: o.label, date: o.date, cashier: o.cashier,
+    customer: o.customer_name, orderType: o.order_type,
+    lines: o.lines.map(l => ({
+      qty: l.qty, name: l.menu_name + (l.variant ? ` · ${l.variant}` : ''),
+      meta: `${l.container} / ${l.sweetness}`, total: l.total_price
+    })),
+    subtotal: o.total, discount: 0, total: o.total,
+    paymentMethod: o.payment_method || '', received: null, change: null
+  });
+
   // Checkout Cart
   const checkout = async () => {
     if (cart.length === 0) return pushToast('Please add items to the cart.', 'warning');
     if (orderType === 'Delivery' && !deliveryPlatform) {
       return pushToast('Please select a delivery platform (Lineman or Grab) first.', 'warning');
+    }
+    if (payMethod === 'Cash' && cashReceived !== '' && changeDue < 0) {
+      return pushToast('Cash received is less than the total.', 'warning');
     }
 
     // Aggregate requirements for material stock checking
@@ -325,6 +453,9 @@ export default function POS() {
         salesRows.push({
           date,
           customer_name: customer.trim() || 'Walk-in',
+          customer_id: custObj ? String(custObj.id) : '',
+          payment_method: payMethod,
+          shift_id: openShift ? String(openShift.id) : '',
           customer_address: address.trim(),
           order_type: orderType,
           delivery_platform: orderType === 'Delivery' ? deliveryPlatform : '',
@@ -371,6 +502,22 @@ export default function POS() {
     // so a mis-scan doesn't waste the customer's earned credit.
     const redemptionId = (redemption && freeItems.length) ? redemption.id : null;
 
+    // Snapshot the order for the printable receipt before the register clears.
+    // The order number arrives with the server response and is patched in.
+    setLastReceipt({
+      kind: 'sale', orderLabel: null, date, cashier: user.username,
+      customer: buyer, orderType,
+      lines: cart.map(i => ({
+        qty: i.qty, name: i.drink.name + (i.childObj ? ` · ${i.childObj.name}` : ''),
+        meta: `${i.container} / ${i.sweet}${i.addonRows.length ? ' +' + i.addonRows.join(', ') : ''}`,
+        total: i.totalPrice, isFree: i.isFree
+      })),
+      subtotal: cartSubtotal, discount: discountAmount, discountLabel: appliedDiscount.code,
+      total: cartTotal, paymentMethod: payMethod,
+      received: payMethod === 'Cash' && Number.isFinite(received) ? received : null,
+      change: payMethod === 'Cash' && Number.isFinite(received) ? received - cartTotal : null
+    });
+
     // Clear the register right away — the cashier shouldn't wait on the
     // network/DB round trip to start the next order. The actual save runs
     // in the background; any failure is surfaced via a toast afterwards.
@@ -382,11 +529,18 @@ export default function POS() {
     setAppliedDiscount({ code: '', type: 'none', value: 0 });
     setRedeemCode('');
     setRedemption(null);
+    setPayMethod('Cash');
+    setCashReceived('');
+    setQrOpen(false);
     pushToast(`Sale completed — ${cupCount} cup row(s) recorded.`, 'success');
 
     checkoutPos({ sales: salesRows, requirements: reqArr, date, expense, redemption_id: redemptionId })
       .then(res => {
         if (res?.queued) pushToast(`Offline — ${cupCount} cup(s) for ${buyer} queued, will sync when online.`, 'info');
+        if (Array.isArray(res) && res[0]?.order_no) {
+          setLastReceipt(r => (r ? { ...r, orderLabel: res[0].order_no } : r));
+        }
+        if (!res?.queued) refreshRecentSales(); // reflect it in Sales History / shift totals right away
       })
       .catch(e => {
         if (e.status === 409 && e.data?.material) pushToast(`Insufficient stock for ${buyer}'s order: ${e.data.material}`, 'warning');
@@ -396,6 +550,7 @@ export default function POS() {
   };
 
   const handleOpenHistory = () => {
+    refreshRecentSales(); // pick up sales rung on other registers since last load
     setHistoryOpen(true);
     if (orders.length > 0) {
       setSelectedHistoryOrder(orders[0]);
@@ -417,6 +572,18 @@ export default function POS() {
                   <p>Single-origin coffee · seasonal menu</p>
                 </div>
                 <div className="sage-pos-header-actions">
+                  <button
+                    className="sage-pos-history-btn"
+                    title={openShift ? `Opened ${String(openShift.opened_at || '').replace('T', ' ').slice(0, 16)} by ${openShift.opened_by}` : 'Open a shift so sales are tied to a drawer count'}
+                    onClick={() => {
+                      setShiftCash(''); setShiftNote('');
+                      if (openShift) refreshRecentSales(); // fresh cash estimate before closing
+                      setShiftModal(openShift ? 'close' : 'open');
+                    }}
+                  >
+                    <i className="fa-solid fa-cash-register"></i>
+                    {openShift ? ` Close shift #${openShift.id}` : ' Open shift'}
+                  </button>
                   <button className="sage-pos-history-btn" onClick={handleOpenHistory}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="12" cy="12" r="9"></circle>
@@ -644,6 +811,43 @@ export default function POS() {
                   </div>
                 </div>
 
+                {/* Payment method + cash tendered / change */}
+                <div className="sage-pos-address-row">
+                  <span className="sage-pos-field-label">Payment</span>
+                  <div className="sage-pos-segmented">
+                    {PAY_METHODS.map(m => (
+                      <button key={m} type="button" className={payMethod === m ? 'active' : ''}
+                        onClick={() => setPayMethod(m)}>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                  {payMethod === 'Cash' && (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+                      <input
+                        className="sage-pos-input"
+                        type="number" min="0" step="any" inputMode="decimal"
+                        value={cashReceived}
+                        onChange={(e) => setCashReceived(e.target.value)}
+                        placeholder="Cash received"
+                      />
+                      <span style={{ fontSize: 13, whiteSpace: 'nowrap', color: changeDue != null && changeDue < 0 ? 'var(--danger-color, #c0392b)' : 'var(--success-color)' }}>
+                        {changeDue == null ? 'Change —' : `Change ${money(changeDue)}`}
+                      </span>
+                    </div>
+                  )}
+                  {payMethod === 'PromptPay' && (
+                    <button
+                      type="button" className="sage-pos-promo-btn" style={{ marginTop: 6 }}
+                      disabled={cart.length === 0}
+                      title={settings.promptpay_id ? '' : 'Set your PromptPay ID in Settings first'}
+                      onClick={() => setQrOpen(true)}
+                    >
+                      <i className="fa-solid fa-qrcode"></i> Show PromptPay QR
+                    </button>
+                  )}
+                </div>
+
                 <button
                   className="sage-pos-charge-btn"
                   onClick={checkout}
@@ -651,6 +855,15 @@ export default function POS() {
                 >
                   <i className="fa-solid fa-check"></i> Charge {money(cartTotal)}
                 </button>
+
+                {lastReceipt && (
+                  <button
+                    type="button" className="sage-pos-promo-btn" style={{ marginTop: 6, width: '100%' }}
+                    onClick={() => setReceiptData(lastReceipt)}
+                  >
+                    <i className="fa-solid fa-print"></i> Print last receipt{lastReceipt.orderLabel ? ` (#${lastReceipt.orderLabel})` : ''}
+                  </button>
+                )}
               </div>
 
             </div>
@@ -660,266 +873,55 @@ export default function POS() {
 
       {/* Drink Customization Modal */}
       {customizerOpen && selected && (
-        <div className="sage-pos-customizer-modal">
-          <div className="sage-pos-modal-backdrop" onClick={() => setCustomizerOpen(false)}></div>
-          <div className="sage-pos-modal-card">
-            
-            <div className="sage-pos-modal-header">
-              <div>
-                <span className="lbl">Customise</span>
-                <h3 className="title">{selected.name}</h3>
-              </div>
-              <button className="sage-pos-modal-close-btn" onClick={() => setCustomizerOpen(false)}>✕</button>
-            </div>
-
-            {/* Variants options (child items) */}
-            {childItems.length > 0 && (
-              <>
-                <h4 className="sage-pos-modal-section-title">Option</h4>
-                <div className="sage-pos-modal-pills">
-                  {childItems.map(c => (
-                    <button
-                      key={c.id}
-                      className={`sage-pos-modal-pill-btn ${String(c.id) === String(childId) ? 'active' : ''}`}
-                      onClick={() => setChildId(String(c.id))}
-                    >
-                      <span>{c.name}</span>
-                      {Number(c.price_change) !== 0 && (
-                        <span className="price-diff">
-                          ({Number(c.price_change) > 0 ? '+' : ''}{money(c.price_change)})
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {/* Container Option */}
-            <h4 className="sage-pos-modal-section-title">Container</h4>
-            <div className="sage-pos-modal-pills">
-              {CONTAINERS.map(c => (
-                <button
-                  key={c.value}
-                  className={`sage-pos-modal-pill-btn ${container === c.value ? 'active' : ''}`}
-                  onClick={() => setContainer(c.value)}
-                >
-                  <span>{c.label}</span>
-                  {Number(c.adj) !== 0 && (
-                    <span className="price-diff">
-                      ({Number(c.adj) > 0 ? '+' : ''}{money(c.adj)})
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-
-            {/* Sweetness Option */}
-            <h4 className="sage-pos-modal-section-title">Sweetness</h4>
-            <div className="sage-pos-modal-pills">
-              {sweetnessLevels.map(s => (
-                <button
-                  key={s}
-                  className={`sage-pos-modal-pill-btn ${sweet === s ? 'active' : ''}`}
-                  onClick={() => setSweet(s)}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-
-            {/* Add-ons Option */}
-            {data.addons.length > 0 && (
-              <>
-                <h4 className="sage-pos-modal-section-title">Add-ons (Max 3)</h4>
-                <div className="sage-pos-modal-addons">
-                  {data.addons.map(a => {
-                    const isSelected = addonRows.includes(a.name);
-                    return (
-                      <button
-                        key={a.id}
-                        className={`sage-pos-modal-addon-item ${isSelected ? 'active' : ''}`}
-                        onClick={() => toggleAddon(a.name)}
-                      >
-                        <span>{a.name}</span>
-                        <span className="price-diff">+{money(a.price_change)}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-
-            {/* Promotion redemption */}
-            {promotion && (
-              <>
-                <h4 className="sage-pos-modal-section-title">Promotion</h4>
-                <div className="sage-pos-modal-pills">
-                  <button
-                    type="button"
-                    className={`sage-pos-modal-pill-btn ${useFreeRedemption ? 'active' : ''}`}
-                    disabled={!canRedeemFree}
-                    title={
-                      !eligibleForFree ? `Free redemption is limited to items ≤ ${money(promotion.max_free_value)}` :
-                      freeRemaining <= 0 ? 'No free cups available for this customer' : ''
-                    }
-                    onClick={() => setUseFreeRedemption(v => {
-                      const next = !v;
-                      if (next) setQty(1);
-                      return next;
-                    })}
-                  >
-                    🎁 Use free redemption{canRedeemFree ? ` (${freeRemaining} left)` : ''}
-                  </button>
-                </div>
-              </>
-            )}
-
-            {/* Quantity */}
-            <div className="sage-pos-modal-qty-row">
-              <span className="sage-pos-field-label" style={{ margin: 0, fontSize: '11px' }}>Quantity</span>
-              <div className="sage-pos-modal-qty-controls">
-                <button className="sage-pos-modal-qty-btn" disabled={useFreeRedemption} onClick={() => setQty(q => Math.max(1, q - 1))}>−</button>
-                <span className="sage-pos-modal-qty-val">{qty}</span>
-                <button className="sage-pos-modal-qty-btn" disabled={useFreeRedemption} onClick={() => setQty(q => q + 1)}>+</button>
-              </div>
-            </div>
-
-            {/* Modal Bottom Totals & Add */}
-            <div className="sage-pos-modal-footer">
-              <div className="sage-pos-modal-total-box">
-                <span className="sage-pos-modal-total-lbl">Total</span>
-                <div className="sage-pos-modal-total-val">{money(modalTotal)}</div>
-              </div>
-              <button className="sage-pos-modal-confirm-btn" onClick={handleAddCustomizedToCart}>
-                Add to order
-              </button>
-            </div>
-
-          </div>
-        </div>
+        <DrinkCustomizerModal
+          selected={selected} childItems={childItems} childId={childId} setChildId={setChildId}
+          container={container} setContainer={setContainer} containers={CONTAINERS}
+          sweetnessLevels={sweetnessLevels} sweet={sweet} setSweet={setSweet}
+          addons={data.addons} addonRows={addonRows} toggleAddon={toggleAddon}
+          promotion={promotion} useFreeRedemption={useFreeRedemption} setUseFreeRedemption={setUseFreeRedemption}
+          canRedeemFree={canRedeemFree} freeRemaining={freeRemaining} eligibleForFree={eligibleForFree}
+          qty={qty} setQty={setQty} modalTotal={modalTotal}
+          onClose={() => setCustomizerOpen(false)} onConfirm={handleAddCustomizedToCart}
+        />
       )}
 
       {/* Sales History Overlay Modal */}
       {historyOpen && (
-        <div className="sage-pos-history-overlay">
-          <div className="sage-pos-modal-backdrop" onClick={() => setHistoryOpen(false)}></div>
-          <div className="sage-pos-history-card">
-            
-            <div className="sage-pos-history-header">
-              <div className="sage-pos-history-header-title">
-                <h3>Sales history</h3>
-                <p>Today · {historyStats.count} orders · {money(historyStats.total)}</p>
-              </div>
-              <button className="sage-pos-history-close-btn" onClick={() => setHistoryOpen(false)}>✕</button>
-            </div>
-
-            <div className="sage-pos-history-body">
-              {/* Left Order List Panel */}
-              <div className="sage-pos-history-left">
-                <div className="sage-pos-history-stats">
-                  <div className="sage-pos-history-stat-box">
-                    <span className="sage-pos-history-stat-lbl">Sales</span>
-                    <span className="sage-pos-history-stat-val">{money(historyStats.total)}</span>
-                  </div>
-                  <div className="sage-pos-history-stat-box">
-                    <span className="sage-pos-history-stat-lbl">Orders</span>
-                    <span className="sage-pos-history-stat-val">{historyStats.count}</span>
-                  </div>
-                  <div className="sage-pos-history-stat-box">
-                    <span className="sage-pos-history-stat-lbl">Avg</span>
-                    <span className="sage-pos-history-stat-val">{money(historyStats.avg)}</span>
-                  </div>
-                </div>
-
-                <div className="sage-pos-history-list">
-                  {orders.length === 0 ? (
-                    <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>No sales history.</div>
-                  ) : (
-                    orders.map(order => {
-                      const isActive = selectedHistoryOrder && selectedHistoryOrder.id === order.id;
-                      const lineSummary = order.lines.map(l => `${l.menu_name} x${l.qty}`).join(', ');
-                      return (
-                        <button
-                          key={order.id}
-                          className={`sage-pos-history-item-btn ${isActive ? 'active' : ''}`}
-                          onClick={() => setSelectedHistoryOrder(order)}
-                        >
-                          <div className="sage-pos-history-item-info">
-                            <div className="sage-pos-history-item-row1">
-                              <span className="sage-pos-history-item-txn-id">#{order.label}</span>
-                              <span className="sage-pos-history-item-time">{order.date}</span>
-                            </div>
-                            <div className="sage-pos-history-item-cust">{order.customer_name}</div>
-                            <div className="sage-pos-history-item-desc">{lineSummary}</div>
-                          </div>
-                          <span className="sage-pos-history-item-total">{money(order.total)}</span>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              {/* Right Order Details Panel */}
-              <div className="sage-pos-history-right">
-                {selectedHistoryOrder ? (
-                  <>
-                    <div className="sage-pos-history-detail-header">
-                      <div className="sage-pos-history-detail-header-row1">
-                        <h4 className="sage-pos-history-detail-title">Order #{selectedHistoryOrder.label}</h4>
-                        <span className="sage-pos-history-detail-badge">
-                          {selectedHistoryOrder.order_type || 'Front POS'}
-                          {selectedHistoryOrder.delivery_platform ? ` · ${selectedHistoryOrder.delivery_platform}` : ''}
-                        </span>
-                      </div>
-                      <div className="sage-pos-history-detail-meta">
-                        {selectedHistoryOrder.customer_name} · {selectedHistoryOrder.date} · Cashier: {selectedHistoryOrder.cashier}
-                      </div>
-                      {selectedHistoryOrder.customer_address && (
-                        <div className="sage-pos-history-detail-meta" style={{ marginTop: 4 }}>
-                          Address: {selectedHistoryOrder.customer_address}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="sage-pos-history-detail-lines">
-                      {selectedHistoryOrder.lines.map((line, idx) => (
-                        <div key={idx} className="sage-pos-history-detail-line">
-                          <span className="sage-pos-history-detail-line-qty">{line.qty}×</span>
-                          <div style={{ flex: 1 }}>
-                            <div className="sage-pos-history-detail-line-name">
-                              {line.menu_name}
-                              {line.variant && <span style={{ color: 'var(--text-muted)' }}> · {line.variant}</span>}
-                            </div>
-                            <div className="sage-pos-history-detail-line-meta">
-                              {line.container} / Sugar {line.sweetness}
-                              {line.addons.length > 0 && ` · Add-ons: ${line.addons.join(', ')}`}
-                            </div>
-                          </div>
-                          <span className="sage-pos-history-detail-line-price">{money(line.total_price)}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="sage-pos-history-detail-footer">
-                      <div className="sage-pos-breakdown-row" style={{ fontWeight: 600, color: 'var(--olive-900)', fontSize: '14px' }}>
-                        <span>Total charged</span>
-                        <span className="val">{money(selectedHistoryOrder.total)}</span>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
-                    Select an order from the list to view details.
-                  </div>
-                )}
-              </div>
-            </div>
-
-          </div>
-        </div>
+        <SalesHistoryModal
+          onClose={() => setHistoryOpen(false)} historyStats={historyStats} orders={orders}
+          selectedHistoryOrder={selectedHistoryOrder} setSelectedHistoryOrder={setSelectedHistoryOrder}
+          onPrint={printHistoryOrder}
+        />
       )}
+
+      {/* PromptPay QR — customer scans, cashier confirms transfer then charges */}
+      {qrOpen && (
+        <Modal title={`PromptPay · ${money(cartTotal)}`} onClose={() => setQrOpen(false)} maxWidth={360}
+          footer={<button className="btn btn-primary btn-block" onClick={() => setQrOpen(false)}>Done</button>}>
+          {settings.promptpay_id ? (
+            qrDataUrl ? (
+              <div style={{ textAlign: 'center' }}>
+                <img src={qrDataUrl} alt="PromptPay QR" style={{ width: 260, maxWidth: '100%' }} />
+                <p className="helper-text">Scan with any Thai banking app, then press Charge.</p>
+              </div>
+            ) : <p className="helper-text">Generating QR…</p>
+          ) : (
+            <p className="helper-text">No PromptPay ID configured. Add it in Settings → Receipt &amp; Payment.</p>
+          )}
+        </Modal>
+      )}
+
+      {/* Register shift: open / close / Z-report dialogs */}
+      <ShiftModals
+        shiftModal={shiftModal} setShiftModal={setShiftModal}
+        shiftCash={shiftCash} setShiftCash={setShiftCash} shiftNote={shiftNote} setShiftNote={setShiftNote}
+        doOpenShift={doOpenShift} doCloseShift={doCloseShift} openShift={openShift} shiftCashEstimate={shiftCashEstimate}
+        zReport={zReport} setZReport={setZReport}
+        onPrintZReport={(zr) => setReceiptData({ kind: 'zreport', ...zr })}
+      />
+
+      {/* Hidden 58mm print slip (receipt / Z-report) */}
+      <Receipt data={receiptData} settings={settings} onDone={() => setReceiptData(null)} />
     </>
   );
 }

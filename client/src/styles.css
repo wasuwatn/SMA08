@@ -1815,3 +1815,21 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
   from { transform: scale(0.97); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
 }
+
+/* ---- 58mm thermal receipt / Z-report printing --------------------------- */
+#print-area { display: none; }
+.rc-row { display: flex; justify-content: space-between; gap: 8px; }
+.rc-hr { border-top: 1px dashed #000; margin: 4px 0; }
+.rc-center { text-align: center; }
+.rc-bold { font-weight: 700; }
+.rc-small { font-size: 9px; }
+@media print {
+  body * { visibility: hidden !important; }
+  #print-area, #print-area * { visibility: visible !important; }
+  #print-area {
+    display: block !important; position: absolute; left: 0; top: 0;
+    width: 58mm; padding: 2mm 3mm; background: #fff; color: #000;
+    font: 10px/1.45 Tahoma, 'Courier New', monospace;
+  }
+  @page { size: 58mm auto; margin: 0; }
+}

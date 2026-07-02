@@ -18,7 +18,7 @@ export default function CRM() {
     let deliCups = 0;
     ds.forEach(x => Object.values(parseOrderCups(x.raw_order_string)).forEach(q => deliCups += q));
     const dates = [...fs.map(s => s.date), ...ds.map(s => s.date)].filter(Boolean).sort().reverse();
-    const loyalty = loyaltyStatus(c.name, salefront, promotion);
+    const loyalty = loyaltyStatus(c, salefront, promotion);
     return {
       id: c.id, name: c.name, address: c.address || 'N/A',
       orders: fs.length + ds.length, spending, cups: frontCups + deliCups,

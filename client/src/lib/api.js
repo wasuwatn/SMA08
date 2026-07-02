@@ -30,7 +30,16 @@ async function req(method, url, body) {
 
 export const api = {
   login: (username, password) => req('POST', '/api/auth/login', { username, password }),
-  list: (table) => req('GET', `/api/${table}`),
+  changePassword: (currentPassword, newPassword) => req('POST', '/api/auth/change-password', { currentPassword, newPassword }),
+  shiftCurrent: () => req('GET', '/api/shift/current'),
+  shiftOpen: (opening_cash) => req('POST', '/api/shift/open', { opening_cash }),
+  shiftClose: (closing_cash, note) => req('POST', '/api/shift/close', { closing_cash, note }),
+  // params: { since, until, limit } — all optional, forwarded as a query string.
+  list: (table, params) => {
+    const qs = params && Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '';
+    return req('GET', `/api/${table}${qs}`);
+  },
+  loyalty: (params) => req('GET', `/api/loyalty?${new URLSearchParams(params).toString()}`),
   insert: (table, data) => req('POST', `/api/${table}`, data),
   update: (table, id, data) => req('PUT', `/api/${table}/${encodeURIComponent(id)}`, data),
   remove: (table, id) => req('DELETE', `/api/${table}/${encodeURIComponent(id)}`),

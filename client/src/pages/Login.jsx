@@ -80,9 +80,6 @@ export default function Login() {
           <button className="btn btn-primary btn-block" type="submit" disabled={busy}>
             {busy ? (<><Spinner /> Signing in…</>) : 'Sign In'}
           </button>
-          <div className="login-hint">
-            Default: <strong>admin / admin</strong> or <strong>staff / staff</strong>
-          </div>
         </div>
       </form>
     </div>

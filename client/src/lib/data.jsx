@@ -1,12 +1,23 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { api, setApiToken, setUnauthorizedHandler } from './api.js';
-import { TABLES } from './helpers.js';
+import { TABLES, HEAVY_TABLES } from './helpers.js';
 import { enqueue, flush, pendingCount } from './outbox.js';
 
 const DataCtx = createContext(null);
 export const useData = () => useContext(DataCtx);
 
-export function DataProvider({ children }) {
+// skipHeavyTables: the POS/Expense satellites only need today's catalog +
+// config to run, not the full transactional history — they pass this to skip
+// salefront/expenses/etc. on login and any reload() call with no explicit
+// table list. Pages that DO need that history (Mother's dashboards/reports)
+// fetch it themselves via reload(['salefront']) or the windowed api.list().
+export function DataProvider({ children, skipHeavyTables = false }) {
+  // Stable reference (skipHeavyTables never changes post-mount) so reload's
+  // useCallback below can safely depend on it without invalidating every render.
+  const defaultTables = useMemo(
+    () => (skipHeavyTables ? TABLES.filter(t => !HEAVY_TABLES.includes(t)) : TABLES),
+    [skipHeavyTables]
+  );
   const [user, setUser] = useState(null);
   const [theme, setThemeState] = useState(localStorage.getItem('KOTEA_THEME') || 'kopi-green');
   const [data, setData] = useState(() => Object.fromEntries(TABLES.map(t => [t, []])));
@@ -36,7 +47,7 @@ export function DataProvider({ children }) {
   // materials…) is still available to POS when the device is offline.
   const cacheKey = (t) => 'KOTEA_CACHE_' + t;
   const reload = useCallback(async (tables) => {
-    const list = Array.isArray(tables) ? tables : tables ? [tables] : TABLES;
+    const list = Array.isArray(tables) ? tables : tables ? [tables] : defaultTables;
     const results = await Promise.all(list.map(t =>
       api.list(t)
         .then(rows => { try { localStorage.setItem(cacheKey(t), JSON.stringify(rows)); } catch {} return rows; })
@@ -47,7 +58,7 @@ export function DataProvider({ children }) {
       list.forEach((t, i) => { next[t] = results[i]; });
       return next;
     });
-  }, []);
+  }, [defaultTables]);
 
   // ---- Offline sync ------------------------------------------------------
   const sync = useCallback(async () => {
@@ -93,26 +104,34 @@ export function DataProvider({ children }) {
     return { queued: true };
   }, [reload]);
 
+  // salefront/expenses are only pulled back into shared state for apps that
+  // actually display that history (Mother) — POS/Expense already show their
+  // own result via the checkout/expense response and refresh stock locally.
   const checkoutPos = useCallback(async (payload) => {
-    const res = await offlineWrite('pos', { ...payload, client_txn_id: crypto.randomUUID() }, ['salefront', 'materials', 'stocklog']);
+    const affected = skipHeavyTables ? ['materials', 'stocklog'] : ['salefront', 'materials', 'stocklog'];
+    const res = await offlineWrite('pos', { ...payload, client_txn_id: crypto.randomUUID() }, affected);
     // Broadcast to other tabs
     if (res && !res.queued) {
       localStorage.setItem('KOTEA_SYNC_TRIGGER', String(Date.now()));
     }
     return res;
-  }, [offlineWrite]);
+  }, [offlineWrite, skipHeavyTables]);
   const submitExpense = useCallback(async (payload) => {
-    const res = await offlineWrite('expense', { ...payload, client_txn_id: crypto.randomUUID() }, ['expenses', 'materials', 'stocklog']);
+    const affected = skipHeavyTables ? ['materials', 'stocklog'] : ['expenses', 'materials', 'stocklog'];
+    const res = await offlineWrite('expense', { ...payload, client_txn_id: crypto.randomUUID() }, affected);
     // Broadcast to other tabs
     if (res && !res.queued) {
       localStorage.setItem('KOTEA_SYNC_TRIGGER', String(Date.now()));
     }
     return res;
-  }, [offlineWrite]);
+  }, [offlineWrite, skipHeavyTables]);
 
   // ---- Auth --------------------------------------------------------------
   const login = useCallback(async (username, password) => {
-    const { token, user: u } = await api.login(username, password);
+    const { token, user: rawUser, mustChangePassword } = await api.login(username, password);
+    // mustChangePassword (default password detected) gates the whole app via
+    // the ChangePassword screen until a real password is set.
+    const u = { ...rawUser, mustChangePassword: !!mustChangePassword };
     setApiToken(token);
     localStorage.setItem('KOTEA_TOKEN', token);
     localStorage.setItem('KOTEA_USER', JSON.stringify(u));
@@ -120,6 +139,16 @@ export function DataProvider({ children }) {
     await reload();
     return u;
   }, [reload]);
+
+  const changePassword = useCallback(async (currentPassword, newPassword) => {
+    await api.changePassword(currentPassword, newPassword);
+    setUser(prev => {
+      if (!prev) return prev;
+      const next = { ...prev, mustChangePassword: false };
+      localStorage.setItem('KOTEA_USER', JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const logout = useCallback(() => {
     setApiToken('');
@@ -161,7 +190,7 @@ export function DataProvider({ children }) {
   const settings = data.settings[0] || {};
 
   const value = {
-    user, login, logout,
+    user, login, logout, changePassword,
     theme, setTheme,
     toasts, pushToast,
     data, reload, insert, update, remove,

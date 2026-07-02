@@ -6,3 +6,5 @@ server/data/
 *.log
 *.exe
 client/dev-dist/
+JWT_SECRET.txt
+server/test/.pgdata-test/

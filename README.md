@@ -35,7 +35,20 @@ All three share `client/src/` (lib, components, pages) — fix a bug once, all a
    - Expense: http://localhost:5173/expense.html
 
 Default logins (seeded on first run): `admin / admin`, `staff / staff`.
-A user only reaches an app if their access flags include `pos` / `expenses`.
+Logging in with a default password forces a password change before the app opens.
+A user only reaches an app if their access flags include `pos` / `expenses` —
+and the server enforces the same flags on every write (each table maps to an
+access flag; the `users` table is Admin-only).
+
+## POS day-to-day
+
+- **Shifts** — open a shift (count the float) before selling; every sale is
+  stamped with the shift id. Closing produces a Z-report (sales by payment
+  method, expected vs counted cash) and can print it.
+- **Payments** — Cash (with received/change), PromptPay (QR generated from the
+  PromptPay ID in Settings → Receipt & Payment), or Transfer.
+- **Receipts** — 58mm slips via the browser print dialog; reprint from Sales
+  History or the "Print last receipt" button.
 
 ## Deploying (cloud / multi-device)
 
@@ -54,3 +67,8 @@ A user only reaches an app if their access flags include `pos` / `expenses`.
   `client/src/lib/outbox.js` to IndexedDB only if a queue must hold thousands.
 - Single branch. No `location_id` yet — add the column (and `migrate()` backfills it)
   when a second branch actually opens.
+- Clients still load whole tables. When `salefront` grows past a few tens of
+  thousands of rows, switch reads to the windowed form the API already supports:
+  `GET /api/salefront?since=2026-01-01&until=2026-12-31` or `?limit=500`
+  (newest first). Loyalty math keys on `customer_id` (name matching only as a
+  legacy fallback), so windowed sales history won't break stamp counts server-side.

@@ -7,6 +7,12 @@ export default function Settings() {
   const { theme, setTheme, settings, data, update, reload, pushToast } = useData();
   const [sweetness, setSweetness] = useState(settings.sweetness_levels || '');
   const [buyers, setBuyers] = useState(settings.buyers || '');
+  // Receipt & payment (printed on the 58mm slip; PromptPay ID drives the POS QR)
+  const [shopName, setShopName] = useState(settings.shop_name || '');
+  const [shopAddress, setShopAddress] = useState(settings.shop_address || '');
+  const [shopPhone, setShopPhone] = useState(settings.shop_phone || '');
+  const [promptpayId, setPromptpayId] = useState(settings.promptpay_id || '');
+  const [receiptFooter, setReceiptFooter] = useState(settings.receipt_footer || '');
   const [exportTable, setExportTable] = useState('materials');
   const [importTable, setImportTable] = useState('materials');
   const logoRef = useRef(null);
@@ -92,18 +98,40 @@ export default function Settings() {
     pushToast('Store settings saved.', 'success');
   };
 
+  const saveReceipt = async () => {
+    await update('settings', settings.id, {
+      shop_name: shopName, shop_address: shopAddress, shop_phone: shopPhone,
+      promptpay_id: promptpayId, receipt_footer: receiptFooter
+    });
+    pushToast('Receipt & payment settings saved.', 'success');
+  };
+
   const chooseTheme = async (t) => {
     setTheme(t);
     if (settings.id) await update('settings', settings.id, { current_theme: t });
     pushToast(`Theme changed to ${t}.`, 'success');
   };
 
+  // The logo is stored as a base64 data URL inside the settings row, and that
+  // row is fetched on every login/reload — an oversized "logo" would bloat
+  // every page load for every device, not just the one that uploaded it.
+  const MAX_LOGO_BYTES = 300 * 1024; // 300KB — generous for a small store logo
+
   const onLogo = (e) => {
     const file = e.target.files[0]; if (!file) return;
+    if (file.size > MAX_LOGO_BYTES) {
+      pushToast(`Logo must be under ${Math.round(MAX_LOGO_BYTES / 1024)}KB (this file is ${Math.round(file.size / 1024)}KB).`, 'warning');
+      e.target.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = async (ev) => {
-      await update('settings', settings.id, { logo: ev.target.result });
-      pushToast('Store logo updated.', 'success');
+      try {
+        await update('settings', settings.id, { logo: ev.target.result });
+        pushToast('Store logo updated.', 'success');
+      } catch (err) {
+        pushToast(err.message || 'Could not save logo.', 'warning');
+      }
     };
     reader.readAsDataURL(file);
     e.target.value = '';
@@ -212,6 +240,28 @@ export default function Settings() {
           <input className="form-control" value={buyers} onChange={(e) => setBuyers(e.target.value)} />
         </div>
         <button className="btn btn-primary" onClick={saveSettings}><i className="fa-solid fa-floppy-disk"></i> Save Options</button>
+      </div>
+
+      <div className="card">
+        <div className="card-header"><h3>Receipt &amp; Payment</h3></div>
+        <div className="field"><label>Shop name (receipt header)</label>
+          <input className="form-control" value={shopName} onChange={(e) => setShopName(e.target.value)} placeholder="KOTEA" />
+        </div>
+        <div className="row-2">
+          <div className="field"><label>Address</label>
+            <input className="form-control" value={shopAddress} onChange={(e) => setShopAddress(e.target.value)} />
+          </div>
+          <div className="field"><label>Phone</label>
+            <input className="form-control" value={shopPhone} onChange={(e) => setShopPhone(e.target.value)} />
+          </div>
+        </div>
+        <div className="field"><label>PromptPay ID (phone or 13-digit tax ID — enables the POS QR)</label>
+          <input className="form-control" value={promptpayId} onChange={(e) => setPromptpayId(e.target.value)} placeholder="0812345678" />
+        </div>
+        <div className="field"><label>Receipt footer message</label>
+          <input className="form-control" value={receiptFooter} onChange={(e) => setReceiptFooter(e.target.value)} placeholder="Thank you! See you again" />
+        </div>
+        <button className="btn btn-primary" onClick={saveReceipt}><i className="fa-solid fa-floppy-disk"></i> Save Receipt Settings</button>
       </div>
 
       <div className="card">

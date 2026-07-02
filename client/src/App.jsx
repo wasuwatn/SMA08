@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useData } from './lib/data.jsx';
 import Toasts from './components/Toasts.jsx';
+import ChangePassword from './components/ChangePassword.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Delivery from './pages/Delivery.jsx';
@@ -71,6 +72,7 @@ export default function App() {
   }, [tab, user]); // eslint-disable-line
 
   if (!user) return (<><Login /><Toasts /></>);
+  if (user.mustChangePassword) return (<><ChangePassword /><Toasts /></>);
 
   const Page = PAGES[activeTab];
   const activeMeta = ALL_FLAT.find(i => i.id === activeTab);
