@@ -49,8 +49,8 @@ export default function CustomerPortal() {
       const liffId = import.meta.env.VITE_LIFF_ID;
       const devUser = import.meta.env.VITE_DEV_LINE_USER; // local testing only
       let loginBody;
+      let liff;
       if (liffId) {
-        let liff;
         try {
           liff = await loadLiff();
         } catch {
@@ -78,6 +78,14 @@ export default function CustomerPortal() {
       try {
         res = await customerApi.lineLogin(loginBody);
       } catch (e) {
+        // The LIFF session can stay "logged in" long after its cached ID
+        // token itself expires, so a plain retry would just resubmit the
+        // same stale token forever. Force a fresh LINE login instead.
+        if (liffId && /expired/i.test(e.message || '')) {
+          try { liff.logout(); } catch { /* no-op */ }
+          liff.login({ redirectUri: window.location.href });
+          return;
+        }
         const hint = e.message === 'Failed to fetch'
           ? 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบว่า VITE_API_BASE ชี้ไปยัง API server ที่ถูกต้อง'
           : e.message;
