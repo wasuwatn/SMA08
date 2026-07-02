@@ -179,6 +179,20 @@ app.post('/api/customer/line-login', async (req, res) => {
   }
 });
 
+// Menu names for the "favorite menu" picklist shown at registration. Public
+// (no auth) — the registering customer only has a short-lived pre-auth token
+// at this point, and a drink menu isn't sensitive.
+app.get('/api/customer/menu-options', async (_req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT name FROM menuname WHERE status = 'Active' ORDER BY name");
+    res.json(rows.map(r => r.name));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+const GENDER_VALUES = ['M', 'F', 'NA'];
+
 app.post('/api/customer/register', async (req, res) => {
   const header = req.header('Authorization') || '';
   const tok = header.startsWith('Bearer ') ? header.slice(7) : null;
@@ -189,18 +203,24 @@ app.post('/api/customer/register', async (req, res) => {
   } catch {
     return res.status(401).json({ error: 'Registration session required.' });
   }
-  const { phone, name } = req.body || {};
+  const { phone, gender, date_of_birth, favorite_menu } = req.body || {};
   if (!phone || !String(phone).trim()) return res.status(400).json({ error: 'Phone number is required.' });
   try {
     const lineUserId = pending.line_user_id;
+    const profile = {
+      gender: GENDER_VALUES.includes(gender) ? gender : 'NA',
+      date_of_birth: date_of_birth ? String(date_of_birth).trim() : null,
+      favorite_menu: Array.isArray(favorite_menu) ? favorite_menu : []
+    };
     // Match an existing customer by phone (link them), else create a new one.
+    // Name always comes from the LINE profile — the customer never types it.
     const { rows } = await pool.query('SELECT * FROM customers WHERE phone = $1 ORDER BY id LIMIT 1', [String(phone).trim()]);
     let customer = rows[0];
     if (customer) {
-      customer = await updateRow('customers', customer.id, { line_user_id: lineUserId });
+      customer = await updateRow('customers', customer.id, { line_user_id: lineUserId, ...profile });
     } else {
       customer = await insertRow('customers', {
-        name: (name || pending.name || 'Customer').trim(), phone: String(phone).trim(), line_user_id: lineUserId
+        name: (pending.name || 'Customer').trim(), phone: String(phone).trim(), line_user_id: lineUserId, ...profile
       });
     }
     const token = signCustomer({ kind: 'customer', customer_id: customer.id, line_user_id: lineUserId });
@@ -557,6 +577,20 @@ function materialUnitPrice({ price, qty, yield: yld }) {
   return q > 0 && y > 0 ? p / (q * (y / 100)) : 0;
 }
 
+// Staff-assigned customer code: 1 English letter + 3 digits (e.g. A001).
+// Uppercased in place; returns an error message, or null if OK/absent.
+const CUSTOMER_CODE_RE = /^[A-Za-z]\d{3}$/;
+function normalizeCustomerCode(data) {
+  if (data.code === undefined) return null;
+  const raw = String(data.code || '').trim().toUpperCase();
+  if (!raw) { data.code = null; return null; }
+  if (!CUSTOMER_CODE_RE.test(raw)) {
+    return 'รหัสลูกค้าต้องเป็นตัวอักษรภาษาอังกฤษ 1 ตัว ตามด้วยตัวเลข 3 หลัก เช่น A001';
+  }
+  data.code = raw;
+  return null;
+}
+
 app.post('/api/:table', async (req, res) => {
   const { table } = req.params;
   if (!valid(table)) return res.status(404).json({ error: 'Unknown table' });
@@ -564,10 +598,15 @@ app.post('/api/:table', async (req, res) => {
     const data = { ...req.body };
     if (table === 'users' && data.password) data.password = await hashPassword(data.password);
     if (table === 'materials') data.unit_price = materialUnitPrice(data);
+    if (table === 'customers') {
+      const codeErr = normalizeCustomerCode(data);
+      if (codeErr) return res.status(400).json({ error: codeErr });
+    }
     const row = await insertRow(table, data);
     if (table !== 'systemlog') await logActivity(actor(req), 'DB INSERT', `${table}: ${JSON.stringify(data).slice(0, 120)}`);
     res.json(row);
   } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: 'รหัสลูกค้านี้ถูกใช้งานแล้ว กรุณาใช้รหัสอื่น' });
     res.status(500).json({ error: e.message });
   }
 });
@@ -587,10 +626,15 @@ app.put('/api/:table/:id', async (req, res) => {
       const current = await getRow('materials', id);
       data.unit_price = materialUnitPrice({ ...current, ...data });
     }
+    if (table === 'customers') {
+      const codeErr = normalizeCustomerCode(data);
+      if (codeErr) return res.status(400).json({ error: codeErr });
+    }
     const row = await updateRow(table, id, data);
     if (table !== 'systemlog') await logActivity(actor(req), 'DB UPDATE', `${table}#${id}`);
     res.json(row);
   } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: 'รหัสลูกค้านี้ถูกใช้งานแล้ว กรุณาใช้รหัสอื่น' });
     res.status(500).json({ error: e.message });
   }
 });

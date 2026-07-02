@@ -45,6 +45,26 @@ A user only reaches an app if their access flags include `pos` / `expenses`.
   static host over **HTTPS** (required for the PWA service worker). Point them at
   the hub with `VITE_API_BASE=https://your-hub` at build time.
 
+### Deploying the customer portal separately (Vercel)
+
+`customer.html` (the LINE LIFF rewards portal) can be deployed on its own,
+independent of the Mother/POS/Expense apps — needed because LINE's LIFF
+"Endpoint URL" must point at a stable public HTTPS domain, while the hub and
+staff apps may only run intermittently.
+
+1. `npm run build:customer` (repo root) builds only `customer.html` and its
+   own chunks into `client/dist-customer/` — no admin/POS code included.
+2. `vercel.json` at the repo root already points Vercel at that build: set
+   the project's env vars to `VITE_API_BASE=https://<hub-public-url>` and
+   `VITE_LIFF_ID=<your LIFF id>`, then deploy.
+3. Add the Vercel domain to the hub's `CORS_ORIGIN` env var (comma-separated
+   with any existing origins) and restart the hub.
+4. In LINE Developers Console, set the LIFF app's Endpoint URL to
+   `https://<vercel-domain>/`.
+
+The hub's own `/customer.html` route and `liff.state` redirect are left in
+place as a harmless fallback for local dev — nothing to remove there.
+
 ## Notes / deferred (ponytail)
 
 - Offline login isn't supported — a device must sign in online once; after that the

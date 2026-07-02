@@ -22,9 +22,21 @@ export default function CustomerPortal() {
   const [pendingToken, setPendingToken] = useState('');
   const [regName, setRegName] = useState('');
   const [regPhone, setRegPhone] = useState('');
+  const [regGender, setRegGender] = useState('NA');
+  const [regDob, setRegDob] = useState('');
+  const [regFavorites, setRegFavorites] = useState([]);
+  const [menuOptions, setMenuOptions] = useState([]);
   const [busy, setBusy] = useState(false);
   const [redeem, setRedeem] = useState(null);    // { code, expires_at }
   const [qrUrl, setQrUrl] = useState('');
+
+  useEffect(() => {
+    customerApi.menuOptions().then(setMenuOptions).catch(() => setMenuOptions([]));
+  }, []);
+
+  const toggleFavorite = (name) => {
+    setRegFavorites(list => list.includes(name) ? list.filter(n => n !== name) : [...list, name]);
+  };
 
   const loadMe = useCallback(async () => {
     const me = await customerApi.me();
@@ -95,7 +107,10 @@ export default function CustomerPortal() {
     setBusy(true);
     setError('');
     try {
-      const res = await customerApi.register({ phone: regPhone.trim(), name: regName.trim() }, pendingToken);
+      const res = await customerApi.register({
+        phone: regPhone.trim(), gender: regGender,
+        date_of_birth: regDob || null, favorite_menu: regFavorites
+      }, pendingToken);
       setToken(res.token);
       await loadMe();
     } catch (e) {
@@ -147,11 +162,33 @@ export default function CustomerPortal() {
         </p>
         {error && <div className="login-error" style={{ marginBottom: 12 }}>{error}</div>}
         <div className="field"><label>ชื่อ</label>
-          <input className="form-control" value={regName} onChange={(e) => setRegName(e.target.value)} placeholder="ชื่อของคุณ" />
+          <input className="form-control" value={regName} disabled readOnly />
         </div>
         <div className="field"><label>เบอร์โทร</label>
           <input className="form-control" type="tel" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} placeholder="08x-xxx-xxxx" autoFocus />
         </div>
+        <div className="field"><label>เพศ</label>
+          <select className="form-control" value={regGender} onChange={(e) => setRegGender(e.target.value)}>
+            <option value="M">ชาย</option>
+            <option value="F">หญิง</option>
+            <option value="NA">ไม่ระบุ</option>
+          </select>
+        </div>
+        <div className="field"><label>วันเกิด</label>
+          <input className="form-control" type="date" value={regDob} onChange={(e) => setRegDob(e.target.value)} />
+        </div>
+        {menuOptions.length > 0 && (
+          <div className="field"><label>ชอบกินเมนูอะไร</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {menuOptions.map(name => (
+                <label key={name} className="badge local" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input type="checkbox" checked={regFavorites.includes(name)} onChange={() => toggleFavorite(name)} />
+                  {name}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
         <button className="btn btn-primary btn-block" type="submit" disabled={busy}>
           {busy ? 'กำลังบันทึก…' : 'เริ่มสะสมแต้ม'}
         </button>

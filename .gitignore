@@ -6,3 +6,4 @@ server/data/
 *.log
 *.exe
 client/dev-dist/
+client/dist-customer/

@@ -13,80 +13,6 @@ export default function Settings() {
   const csvRef = useRef(null);
   const jsonRef = useRef(null);
 
-  // ---- Supabase cloud sync ----------------------------------------------
-  const [sbUrl, setSbUrl] = useState(localStorage.getItem('KOTEA_SB_URL') || '');
-  const [sbKey, setSbKey] = useState(localStorage.getItem('KOTEA_SB_KEY') || '');
-  const [sbConnected, setSbConnected] = useState(false);
-  const [sbBusy, setSbBusy] = useState('');
-  const sbClient = useRef(null);
-
-  const getClient = async () => {
-    if (sbClient.current) return sbClient.current;
-    const mod = await import(/* @vite-ignore */ 'https://esm.sh/@supabase/supabase-js@2');
-    sbClient.current = mod.createClient(sbUrl.trim(), sbKey.trim());
-    return sbClient.current;
-  };
-
-  const sbConnect = async () => {
-    if (!sbUrl.trim() || !sbKey.trim()) return pushToast('Enter your Supabase URL and anon key.', 'warning');
-    setSbBusy('connect');
-    try {
-      sbClient.current = null;
-      const client = await getClient();
-      const { error } = await client.from('users').select('username').limit(1);
-      if (error) throw error;
-      localStorage.setItem('KOTEA_SB_URL', sbUrl.trim());
-      localStorage.setItem('KOTEA_SB_KEY', sbKey.trim());
-      setSbConnected(true);
-      pushToast('Connected to Supabase.', 'success');
-    } catch (e) {
-      setSbConnected(false);
-      pushToast(`Supabase connection failed: ${e.message || e}`, 'warning');
-    } finally { setSbBusy(''); }
-  };
-
-  const sbPush = async () => {
-    setSbBusy('push');
-    try {
-      const client = await getClient();
-      let errors = 0;
-      for (const t of TABLES) {
-        const rows = await api.list(t);
-        if (rows.length) {
-          const { error } = await client.from(t).upsert(rows);
-          if (error) { console.error(t, error); errors++; }
-        }
-      }
-      pushToast(errors ? `Pushed with ${errors} table error(s) — check cloud schema/RLS.` : 'All local data pushed to cloud.', errors ? 'warning' : 'success');
-    } catch (e) { pushToast(`Push failed: ${e.message || e}`, 'warning'); }
-    finally { setSbBusy(''); }
-  };
-
-  const sbPull = async () => {
-    if (!confirm('Pull cloud data and overwrite all local data?')) return;
-    setSbBusy('pull');
-    try {
-      const client = await getClient();
-      const payload = {};
-      for (const t of TABLES) {
-        const { data: rows, error } = await client.from(t).select('*');
-        if (!error && rows) payload[t] = rows;
-      }
-      await api.restore(payload);
-      await reload();
-      pushToast('Local database synced from cloud.', 'success');
-    } catch (e) { pushToast(`Pull failed: ${e.message || e}`, 'warning'); }
-    finally { setSbBusy(''); }
-  };
-
-  const sbDisconnect = () => {
-    localStorage.removeItem('KOTEA_SB_URL');
-    localStorage.removeItem('KOTEA_SB_KEY');
-    sbClient.current = null;
-    setSbConnected(false);
-    pushToast('Supabase disconnected.', 'info');
-  };
-
   const saveSettings = async () => {
     await update('settings', settings.id, { sweetness_levels: sweetness, buyers });
     pushToast('Store settings saved.', 'success');
@@ -241,38 +167,6 @@ export default function Settings() {
           <button className="btn btn-danger" onClick={() => jsonRef.current.click()}><i className="fa-solid fa-cloud-arrow-up"></i> Restore Backup</button>
           <input ref={jsonRef} type="file" accept=".json" hidden onChange={onImportJSON} />
         </div>
-      </div>
-
-      <div className="card" style={{ gridColumn: '1 / -1' }}>
-        <div className="card-header">
-          <h3>Cloud Sync (Supabase)</h3>
-          <span className={`badge ${sbConnected ? 'online' : 'local'}`}><i className="fa-solid fa-circle"></i> {sbConnected ? 'Connected' : 'Not connected'}</span>
-        </div>
-        <div className="row-2">
-          <div className="field"><label>Project URL</label>
-            <input className="form-control" value={sbUrl} placeholder="https://xxxx.supabase.co" onChange={(e) => setSbUrl(e.target.value)} />
-          </div>
-          <div className="field"><label>Anon Key</label>
-            <input className="form-control" type="password" value={sbKey} placeholder="eyJ..." onChange={(e) => setSbKey(e.target.value)} />
-          </div>
-        </div>
-        <div className="section-actions">
-          <button className="btn btn-secondary" disabled={!!sbBusy} onClick={sbConnect}>
-            <i className="fa-solid fa-plug"></i> {sbBusy === 'connect' ? 'Connecting…' : 'Connect'}
-          </button>
-          <button className="btn btn-primary" disabled={!sbConnected || !!sbBusy} onClick={sbPush}>
-            <i className="fa-solid fa-cloud-arrow-up"></i> {sbBusy === 'push' ? 'Pushing…' : 'Push local → cloud'}
-          </button>
-          <button className="btn btn-primary" disabled={!sbConnected || !!sbBusy} onClick={sbPull}>
-            <i className="fa-solid fa-cloud-arrow-down"></i> {sbBusy === 'pull' ? 'Pulling…' : 'Pull cloud → local'}
-          </button>
-          {sbConnected && <button className="btn btn-danger" onClick={sbDisconnect}>Disconnect</button>}
-        </div>
-        <p className="helper-text">
-          Your Supabase project must already contain tables matching this app's schema
-          ({TABLES.join(', ')}) with appropriate Row Level Security policies. Push upserts all local
-          rows to the cloud; Pull replaces all local data with the cloud copy.
-        </p>
       </div>
     </div>
   );
