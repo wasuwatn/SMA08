@@ -423,9 +423,15 @@ async function runCheckout(table, body, user) {
   const rows = await withTransaction(async (client) => {
     if (!(await claimTxn(client_txn_id, client))) return null; // already synced
     // A self-redeem code may only be consumed once and must still be pending.
+    // Atomic claim-with-guard (same pattern as adjustStock below): the guard
+    // rides on the UPDATE itself so two concurrent checkouts scanning the same
+    // code can't both pass a stale read and both burn it.
     if (redemption_id) {
-      const r = await getRow('redemptions', redemption_id, client);
-      if (!r || r.status !== 'pending') {
+      const claim = await client.query(
+        "UPDATE redemptions SET status = 'used', used_at = $2 WHERE id = $1 AND status = 'pending' RETURNING id",
+        [redemption_id, new Date().toISOString()]
+      );
+      if (!claim.rowCount) {
         const err = new Error('REDEMPTION_INVALID');
         throw err;
       }
@@ -473,11 +479,9 @@ async function runCheckout(table, body, user) {
     // still deducted above like any other cup) rather than silently eating
     // into margin with no trace.
     if (expense && expense.amount > 0) await insertRow('expenses', expense, client);
-    // Burn the self-redeem code in the same txn so it can't be reused.
+    // Code was already claimed atomically above; just record which order burned it.
     if (redemption_id) {
-      await updateRow('redemptions', redemption_id, {
-        status: 'used', used_at: new Date().toISOString(), used_order_no: orderNo
-      }, client);
+      await updateRow('redemptions', redemption_id, { used_order_no: orderNo }, client);
     }
     return out;
   });
