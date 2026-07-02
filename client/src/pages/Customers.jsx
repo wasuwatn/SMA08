@@ -25,10 +25,11 @@ export default function Customers() {
   const blankCustomer = () => ({ name: '', address: '', phone: '', code: '', gender: 'NA', date_of_birth: '', favorite_menu: [] });
 
   const save = async () => {
-    if (!editing.name.trim()) return pushToast('Customer name is required.', 'warning');
+    const name = (editing.name || '').trim();
+    if (!name) return pushToast('Customer name is required.', 'warning');
     const payload = {
-      name: editing.name.trim(), address: editing.address.trim(), phone: editing.phone.trim(),
-      code: editing.code.trim(), gender: editing.gender || 'NA',
+      name, address: (editing.address || '').trim(), phone: (editing.phone || '').trim(),
+      code: (editing.code || '').trim(), gender: editing.gender || 'NA',
       date_of_birth: editing.date_of_birth || null, favorite_menu: editing.favorite_menu || []
     };
     try {
@@ -75,7 +76,7 @@ export default function Customers() {
                 <td><span className="helper-text">{parseFavorites(c.favorite_menu).join(', ') || 'N/A'}</span></td>
                 <td><span className="helper-text">{c.address || 'N/A'}</span></td>
                 <td>
-                  <button className="btn btn-sm btn-secondary" onClick={() => setEditing({ ...c, favorite_menu: parseFavorites(c.favorite_menu), phone: c.phone || '', code: c.code || '', date_of_birth: c.date_of_birth || '' })}><i className="fa-solid fa-pen-to-square"></i></button>
+                  <button className="btn btn-sm btn-secondary" onClick={() => setEditing({ ...c, favorite_menu: parseFavorites(c.favorite_menu), phone: c.phone || '', code: c.code || '', date_of_birth: c.date_of_birth || '', address: c.address || '' })}><i className="fa-solid fa-pen-to-square"></i></button>
                   <button className="btn btn-sm btn-danger" style={{ marginLeft: 4 }} onClick={() => del(c.id)}><i className="fa-solid fa-trash-can"></i></button>
                 </td>
               </tr>
