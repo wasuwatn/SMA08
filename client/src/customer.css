@@ -1,0 +1,278 @@
+/* ============================================================================
+   KOTEA Rewards — customer-facing LIFF portal  ·  customer.css
+   Scoped with the cp- prefix; layers on top of styles.css Sage tokens
+   (olive/sage/stone). Mobile-first, single column, max 480px.
+   ========================================================================== */
+
+.cp-app, .cp-app input, .cp-app button, .cp-app select {
+  font-family: 'DM Sans', 'Noto Sans Thai', system-ui, -apple-system, sans-serif;
+}
+.cp-app h1, .cp-app h2, .cp-app h3, .cp-display {
+  font-family: 'Outfit', 'Noto Sans Thai', system-ui, sans-serif;
+}
+
+.cp-app {
+  max-width: 480px; margin: 0 auto; min-height: 100dvh;
+  padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 16px;
+  font-size: 16px; /* ≥16px avoids iOS auto-zoom */
+}
+
+/* ---- Header: shop brand ------------------------------------------------- */
+.cp-header { display: flex; align-items: center; justify-content: space-between; }
+.cp-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cp-logo {
+  width: 42px; height: 42px; border-radius: 13px; flex-shrink: 0;
+  background: linear-gradient(150deg, var(--primary), var(--secondary));
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 19px; font-family: 'Outfit', sans-serif;
+  box-shadow: var(--shadow-sm);
+}
+.cp-shop-name { font-size: 17px; font-weight: 700; line-height: 1.15; letter-spacing: -0.01em; font-family: 'Outfit', 'Noto Sans Thai', sans-serif; }
+.cp-shop-sub { font-size: 11.5px; color: var(--text-muted); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* ---- Greeting ------------------------------------------------------------ */
+.cp-greeting { display: flex; align-items: center; gap: 12px; padding: 2px 2px 0; }
+.cp-avatar {
+  width: 46px; height: 46px; border-radius: 50%; flex-shrink: 0;
+  background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 19px;
+}
+.cp-hello { font-size: 13px; color: var(--text-muted); font-weight: 500; }
+.cp-name { font-size: 21px; font-weight: 700; letter-spacing: -0.01em; margin: 0; line-height: 1.2; word-break: break-word; }
+
+/* ---- Stamp card (hero) ---------------------------------------------------- */
+.cp-card {
+  position: relative; border-radius: 20px; overflow: hidden;
+  background: linear-gradient(160deg, var(--olive-600) 0%, var(--olive-800) 100%);
+  color: #fff; padding: 20px; box-shadow: var(--shadow-lg);
+}
+/* soft decorative rings, pure CSS so no asset load */
+.cp-card::before, .cp-card::after {
+  content: ''; position: absolute; border-radius: 50%; pointer-events: none;
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
+}
+.cp-card::before { width: 190px; height: 190px; top: -70px; right: -60px; }
+.cp-card::after { width: 120px; height: 120px; bottom: -50px; left: -40px; }
+
+.cp-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+.cp-promo-name { font-size: 16.5px; font-weight: 700; font-family: 'Outfit', 'Noto Sans Thai', sans-serif; }
+.cp-cycle { font-family: 'DM Mono', monospace; font-size: 14px; font-weight: 500; opacity: 0.9; white-space: nowrap; }
+.cp-cycle b { font-size: 19px; font-weight: 700; }
+.cp-card-sub { font-size: 12.5px; opacity: 0.75; margin-bottom: 16px; }
+
+.cp-stamps {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;
+  justify-items: center; margin-bottom: 6px;
+}
+.cp-stamp {
+  width: 52px; height: 52px; border-radius: 50%; max-width: 100%;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px dashed rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.55); font-size: 14px; font-weight: 600;
+  position: relative;
+}
+.cp-stamp svg { width: 26px; height: 26px; }
+.cp-stamp.is-earned {
+  border: 2px solid #fff; background: #fff; color: var(--olive-700);
+  border-style: solid;
+  animation: cp-stamp-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.cp-stamp.is-next { border-color: rgba(255, 255, 255, 0.8); color: rgba(255, 255, 255, 0.9); }
+@keyframes cp-stamp-pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .cp-stamp.is-earned { animation: none; }
+}
+
+.cp-card-note { font-size: 12.5px; opacity: 0.8; text-align: center; margin: 10px 0 14px; }
+
+.cp-free-pill {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: rgba(255, 255, 255, 0.14); border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 99px; padding: 8px 14px; margin-bottom: 12px;
+  font-size: 14px; font-weight: 600;
+}
+.cp-free-pill svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+.cp-redeem {
+  width: 100%; min-height: 50px; border: none; border-radius: 14px;
+  background: #fff; color: var(--olive-800);
+  font-size: 16.5px; font-weight: 700; font-family: 'Outfit', 'Noto Sans Thai', sans-serif;
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  cursor: pointer; touch-action: manipulation;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.cp-redeem svg { width: 20px; height: 20px; }
+.cp-redeem:active { transform: scale(0.98); }
+.cp-redeem:disabled { opacity: 0.55; cursor: default; background: rgba(255, 255, 255, 0.75); }
+
+/* ---- Stats row ------------------------------------------------------------ */
+.cp-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.cp-stat {
+  background: var(--surface-color); border: 1px solid var(--border-color);
+  border-radius: 14px; padding: 12px 8px; text-align: center; box-shadow: var(--shadow-sm);
+}
+.cp-stat .label { font-size: 11px; color: var(--text-muted); font-weight: 600; margin-bottom: 4px; }
+.cp-stat .value { font-size: 20px; font-weight: 700; font-family: 'Outfit', sans-serif; letter-spacing: -0.02em; }
+.cp-stat .value.good { color: var(--success-color); }
+
+/* ---- Tabs ------------------------------------------------------------------ */
+.cp-tabs {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  background: var(--surface-2); border: 1px solid var(--border-color);
+  border-radius: 13px; padding: 4px;
+}
+.cp-tab {
+  min-height: 44px; border: none; border-radius: 10px; background: transparent;
+  font-size: 14px; font-weight: 600; color: var(--text-muted);
+  cursor: pointer; touch-action: manipulation; transition: background 0.15s, color 0.15s;
+}
+.cp-tab[aria-selected="true"] { background: var(--surface-color); color: var(--text-color); box-shadow: var(--shadow-sm); }
+
+.cp-panel {
+  background: var(--surface-color); border: 1px solid var(--border-color);
+  border-radius: 16px; box-shadow: var(--shadow-sm); overflow: hidden;
+}
+.cp-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 13px 16px; border-bottom: 1px solid var(--border-soft);
+}
+.cp-row:last-child { border-bottom: none; }
+.cp-row-main { min-width: 0; }
+.cp-row-title { font-size: 14.5px; font-weight: 600; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.cp-row-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.cp-row-end { text-align: right; flex-shrink: 0; }
+.cp-price { font-size: 14.5px; font-weight: 700; font-family: 'Outfit', sans-serif; }
+.cp-code { font-family: 'DM Mono', monospace; letter-spacing: 0.12em; }
+
+.cp-badge {
+  display: inline-flex; align-items: center; gap: 4px; border-radius: 99px;
+  font-size: 11.5px; font-weight: 600; padding: 2.5px 9px; white-space: nowrap;
+}
+.cp-badge.free { background: var(--accent-soft); color: var(--accent-ink); }
+.cp-badge.used { background: var(--accent-soft); color: var(--accent-ink); }
+.cp-badge.pending { background: var(--gold-soft); color: var(--gold); }
+.cp-badge.expired { background: var(--surface-2); color: var(--text-muted); }
+
+.cp-empty { padding: 28px 16px; text-align: center; color: var(--text-muted); font-size: 13.5px; }
+.cp-empty svg { width: 30px; height: 30px; margin-bottom: 8px; opacity: 0.5; }
+
+/* ---- Modal (redeem QR) ------------------------------------------------------ */
+.cp-scrim {
+  position: fixed; inset: 0; background: rgba(29, 28, 24, 0.55); z-index: 1000;
+  display: flex; align-items: flex-end; justify-content: center;
+  animation: cp-fade 0.2s ease both;
+}
+@keyframes cp-fade { from { opacity: 0; } to { opacity: 1; } }
+.cp-modal {
+  background: var(--surface-color); width: 100%; max-width: 480px;
+  border-radius: 24px 24px 0 0; padding: 20px 20px calc(24px + env(safe-area-inset-bottom));
+  text-align: center; position: relative;
+  animation: cp-rise 0.28s cubic-bezier(0.32, 0.72, 0.35, 1) both;
+}
+@keyframes cp-rise { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .cp-scrim, .cp-modal { animation: none; }
+}
+@media (min-width: 480px) {
+  .cp-scrim { align-items: center; padding: 16px; }
+  .cp-modal { border-radius: 24px; }
+}
+.cp-modal-close {
+  position: absolute; top: 14px; right: 14px; width: 44px; height: 44px;
+  border: none; border-radius: 50%; background: var(--surface-2);
+  color: var(--text-secondary); font-size: 16px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.cp-modal h2 { font-size: 19px; font-weight: 700; margin: 4px 0 2px; }
+.cp-modal-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; }
+.cp-qr-box {
+  width: 232px; height: 232px; margin: 0 auto 14px; border-radius: 16px;
+  border: 1px solid var(--border-color); background: #fff; padding: 6px;
+  display: flex; align-items: center; justify-content: center;
+}
+.cp-qr-box img { width: 100%; height: 100%; }
+.cp-modal-code-label { font-size: 11.5px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; }
+.cp-modal-code {
+  font-family: 'DM Mono', monospace; font-size: 38px; font-weight: 700;
+  letter-spacing: 0.18em; color: var(--text-color); margin: 2px 0 10px;
+}
+.cp-modal-hint { font-size: 12.5px; color: var(--text-muted); line-height: 1.55; }
+.cp-modal-done {
+  width: 100%; min-height: 48px; margin-top: 16px; border: none; border-radius: 13px;
+  background: var(--primary); color: #fff; font-size: 15.5px; font-weight: 700;
+  font-family: 'Outfit', 'Noto Sans Thai', sans-serif; cursor: pointer; touch-action: manipulation;
+}
+.cp-modal-done:active { filter: brightness(1.06); }
+
+/* ---- Register / error / loading -------------------------------------------- */
+.cp-center { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.cp-auth {
+  width: 100%; max-width: 400px; background: var(--surface-color);
+  border: 1px solid var(--border-color); border-radius: 20px;
+  box-shadow: var(--shadow-md); padding: 26px 22px;
+}
+.cp-auth-head { text-align: center; margin-bottom: 20px; }
+.cp-auth-head .cp-logo { margin: 0 auto 12px; width: 54px; height: 54px; border-radius: 16px; font-size: 24px; }
+.cp-auth-head h2 { font-size: 21px; font-weight: 700; margin-bottom: 4px; }
+.cp-auth-head p { font-size: 13.5px; color: var(--text-muted); line-height: 1.5; }
+
+.cp-field { margin-bottom: 15px; }
+.cp-field > label { display: block; font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+.cp-field .req { color: var(--warning-color); }
+.cp-input {
+  width: 100%; min-height: 48px; padding: 10px 14px; font-size: 16px;
+  border: 1.5px solid var(--border-color); border-radius: 12px;
+  background: var(--surface-color); color: var(--text-color);
+  transition: border-color 0.15s;
+}
+.cp-input:focus { outline: none; border-color: var(--primary); box-shadow: var(--ring); }
+.cp-input[disabled] { background: var(--surface-2); color: var(--text-secondary); }
+
+.cp-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cp-seg button {
+  min-height: 46px; border: 1.5px solid var(--border-color); border-radius: 12px;
+  background: var(--surface-color); color: var(--text-secondary);
+  font-size: 14.5px; font-weight: 600; cursor: pointer; touch-action: manipulation;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.cp-seg button[aria-pressed="true"] {
+  border-color: var(--primary); background: var(--accent-soft); color: var(--accent-ink);
+}
+
+.cp-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.cp-chip {
+  min-height: 40px; padding: 7px 15px; border-radius: 99px;
+  border: 1.5px solid var(--border-color); background: var(--surface-color);
+  color: var(--text-secondary); font-size: 14px; font-weight: 500;
+  cursor: pointer; touch-action: manipulation; display: inline-flex; align-items: center; gap: 6px;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.cp-chip[aria-pressed="true"] { border-color: var(--primary); background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+.cp-chip svg { width: 14px; height: 14px; }
+
+.cp-submit {
+  width: 100%; min-height: 52px; margin-top: 6px; border: none; border-radius: 14px;
+  background: var(--primary); color: #fff; font-size: 16.5px; font-weight: 700;
+  font-family: 'Outfit', 'Noto Sans Thai', sans-serif; cursor: pointer; touch-action: manipulation;
+  transition: filter 0.15s, opacity 0.15s;
+}
+.cp-submit:active { filter: brightness(1.07); }
+.cp-submit:disabled { opacity: 0.55; cursor: default; }
+
+.cp-error-box {
+  background: var(--status-error-bg); color: var(--status-error-fg);
+  border-radius: 12px; padding: 11px 14px; font-size: 13.5px; line-height: 1.5;
+  margin-bottom: 14px; word-break: break-word;
+}
+
+/* ---- Loading skeleton -------------------------------------------------------- */
+.cp-skel { border-radius: 16px; background: var(--surface-2); position: relative; overflow: hidden; }
+.cp-skel::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  animation: cp-shimmer 1.4s infinite;
+}
+@keyframes cp-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .cp-skel::after { animation: none; } }
