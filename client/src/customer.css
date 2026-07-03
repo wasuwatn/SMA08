@@ -101,22 +101,22 @@
 
 .cp-free-pill {
   display: flex; align-items: center; justify-content: center; gap: 8px;
-  background: transparent; border: 1.5px solid var(--cp-navy);
+  background: rgba(138, 106, 66, 0.07); border: 1.5px solid #8a6a42;
   border-radius: 99px; padding: 8px 14px; margin-bottom: 12px;
-  font-size: 14px; font-weight: 600; color: var(--cp-navy);
+  font-size: 14px; font-weight: 600; color: #7c5e37;
 }
 .cp-free-pill svg { width: 18px; height: 18px; flex-shrink: 0; }
 
 .cp-redeem {
   width: 100%; min-height: 50px; border: none; border-radius: 14px;
-  background: var(--cp-navy); color: #f7f2e6;
+  background: var(--olive-600); color: #fbf8ee;
   font-size: 16.5px; font-weight: 700; font-family: 'Outfit', 'Noto Sans Thai', sans-serif;
   display: flex; align-items: center; justify-content: center; gap: 9px;
   cursor: pointer; touch-action: manipulation;
-  transition: transform 0.15s ease, opacity 0.15s ease;
+  transition: transform 0.15s ease, opacity 0.15s ease, filter 0.15s ease;
 }
 .cp-redeem svg { width: 20px; height: 20px; }
-.cp-redeem:active { transform: scale(0.98); }
+.cp-redeem:active { transform: scale(0.98); filter: brightness(1.06); }
 .cp-redeem:disabled { opacity: 0.5; cursor: default; }
 
 /* ---- Stats row ------------------------------------------------------------ */
@@ -213,7 +213,7 @@
 .cp-modal-hint { font-size: 12.5px; color: var(--text-muted); line-height: 1.55; }
 .cp-modal-done {
   width: 100%; min-height: 48px; margin-top: 16px; border: none; border-radius: 13px;
-  background: #2648a8; color: #f7f2e6; font-size: 15.5px; font-weight: 700;
+  background: #d9c3a0; color: #46331b; font-size: 15.5px; font-weight: 700;
   font-family: 'Outfit', 'Noto Sans Thai', sans-serif; cursor: pointer; touch-action: manipulation;
 }
 .cp-modal-done:active { filter: brightness(1.06); }
