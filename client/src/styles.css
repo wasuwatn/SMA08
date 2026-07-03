@@ -301,7 +301,7 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 
 /* ---- Page tabs ----------------------------------------------------------- */
 .page-tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--border-color); }
-.page-tab { padding: 10px 18px; border: none; background: none; font-size: 14px; font-weight: 600; color: var(--text-muted); border-bottom: 2px solid transparent; cursor: pointer; margin-bottom: -1px; transition: color .14s; }
+.page-tab { padding: 10px 18px; border: none; background: none; font-size: 14px; font-weight: 600; color: var(--text-muted); border-bottom: 2px solid transparent; cursor: pointer; margin-bottom: -1px; transition: color .14s, border-color .14s; }
 .page-tab:hover { color: var(--text-secondary); }
 .page-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
 
@@ -1907,16 +1907,25 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 }
 
 /* ---- Customer reward card (LIFF portal) -------------------------------- */
-.reward-page { max-width: 480px; margin: 0 auto; padding: 14px 16px 32px; display: flex; flex-direction: column; gap: 14px; }
+@keyframes reward-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes reward-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes reward-pop { 0% { opacity: 0; transform: scale(.5); } 70% { transform: scale(1.08); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes reward-glow-pulse {
+  0%, 100% { box-shadow: var(--shadow-md), 0 0 0 0 oklch(56% 0.08 148 / 0.35); }
+  50% { box-shadow: var(--shadow-md), 0 0 0 7px oklch(56% 0.08 148 / 0); }
+}
+
+.reward-page { max-width: 480px; margin: 0 auto; padding: 14px 16px 32px; display: flex; flex-direction: column; gap: 14px; animation: reward-fade-up .32s ease both; }
 
 .reward-topbar { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px; }
 .reward-topbar-title { font-family: var(--font-display); font-weight: 700; font-size: 17px; }
 .reward-icon-btn {
   width: 32px; height: 32px; border-radius: 50%; border: none; background: var(--surface-2);
   color: var(--text-muted); display: inline-flex; align-items: center; justify-content: center;
-  font-size: 14px; transition: background .14s, color .14s;
+  font-size: 14px; cursor: pointer; transition: background .14s, color .14s, transform .14s;
 }
 .reward-icon-btn:hover { background: var(--stone-200); color: var(--text-color); }
+.reward-icon-btn:active { transform: scale(.92); }
 
 .reward-hero {
   text-align: center; font-family: var(--font-display); font-weight: 700; letter-spacing: -0.03em;
@@ -1928,8 +1937,9 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
   background: linear-gradient(160deg, var(--olive-50) 0%, var(--surface-color) 45%, var(--olive-100) 100%);
   border: 1px solid var(--border-color);
   box-shadow: var(--shadow-lg), inset 0 1px 0 oklch(100% 0 0 / 0.6);
-  text-align: center;
+  text-align: center; transition: box-shadow .2s, transform .2s;
 }
+.reward-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg), 0 16px 28px oklch(40% 0.05 100 / 0.14), inset 0 1px 0 oklch(100% 0 0 / 0.6); }
 .reward-card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; text-align: left; }
 .reward-card-greeting { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .reward-card-greeting .greeting-label { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
@@ -1937,10 +1947,12 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .reward-card-avatar {
   flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%;
   background: linear-gradient(155deg, var(--olive-500), var(--olive-700));
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-md), 0 0 0 3px var(--surface-color), 0 0 0 4px var(--olive-200);
   display: flex; align-items: center; justify-content: center;
   font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: 0.02em; color: #fff;
+  transition: transform .18s;
 }
+.reward-card-avatar:hover { transform: scale(1.06) rotate(-2deg); }
 .reward-card .store-name { color: var(--text-color); font-size: 20px; margin: 0 0 4px; }
 .reward-card .expiry { color: var(--text-muted); font-size: 12px; margin: 0 0 14px; }
 .reward-card .headline { font-family: var(--font-display); font-weight: 700; font-size: 21px; margin: 0 0 18px; color: var(--olive-800); }
@@ -1948,8 +1960,9 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .reward-badge-row {
   display: inline-flex; align-items: center; gap: 8px; background: var(--surface-color);
   border: 1px solid var(--border-color); border-radius: 99px; padding: 6px 8px 6px 6px;
-  margin-bottom: 18px; max-width: 100%; box-shadow: var(--shadow-sm);
+  margin-bottom: 18px; max-width: 100%; box-shadow: var(--shadow-sm); transition: box-shadow .2s, border-color .2s;
 }
+.reward-badge-row.ready { border-color: var(--sage-500); animation: reward-glow-pulse 2.2s ease-in-out infinite; }
 .reward-badge {
   display: inline-flex; align-items: center; gap: 5px; background: var(--sage-500); color: #fff;
   font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
@@ -1961,20 +1974,29 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .stamp {
   aspect-ratio: 1; border-radius: 50%; display: flex; align-items: center; justify-content: center;
   border: 2px solid var(--olive-200); background: var(--surface-color); color: var(--text-muted);
-  font-family: var(--font-display); font-weight: 600; font-size: 14px; transition: .16s; box-shadow: var(--shadow-sm);
+  font-family: var(--font-display); font-weight: 600; font-size: 14px; transition: transform .16s, box-shadow .16s; box-shadow: var(--shadow-sm);
 }
-.stamp.filled { background: linear-gradient(155deg, var(--olive-500), var(--olive-700)); color: #fff; border-color: var(--olive-700); box-shadow: var(--shadow-md); }
+.stamp.filled { background: linear-gradient(155deg, var(--olive-500), var(--olive-700)); color: #fff; border-color: var(--olive-700); box-shadow: var(--shadow-md); animation: reward-pop .4s cubic-bezier(.34,1.56,.64,1) backwards; }
 .stamp.reward-slot { border-style: dashed; border-color: var(--olive-300); }
 .stamp.reward-slot.filled { background: linear-gradient(155deg, var(--highlight-color), var(--gold)); border-color: var(--highlight-color); color: #fff; border-style: solid; box-shadow: var(--shadow-md); }
+.stamp:hover { transform: translateY(-2px); }
 
-.reward-redeem-btn { margin-top: -2px; }
+.reward-redeem-btn { margin-top: -2px; transition: transform .16s, box-shadow .2s, filter .2s; }
+.reward-redeem-btn:active:not(:disabled) { transform: translateY(1px); }
+.reward-redeem-btn.ready {
+  background: linear-gradient(135deg, var(--olive-600), var(--sage-600)); border-color: transparent;
+  box-shadow: var(--shadow-md); animation: reward-glow-pulse 2.2s ease-in-out infinite;
+}
+.reward-redeem-btn.ready:hover { filter: brightness(1.06); transform: translateY(-1px); }
 
 .reward-tabs { margin-top: 4px; }
-.reward-list { display: flex; flex-direction: column; gap: 10px; }
+.reward-list { display: flex; flex-direction: column; gap: 10px; animation: reward-fade-in .22s ease both; }
 .reward-list-item {
   display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--surface-color);
   border: 1px solid var(--border-color); border-radius: var(--radius-md); box-shadow: var(--shadow-sm);
+  transition: transform .16s, box-shadow .16s, border-color .16s;
 }
+.reward-list-item:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); border-color: var(--stone-300); }
 .reward-list-thumb {
   width: 42px; height: 42px; border-radius: var(--radius-sm); flex-shrink: 0;
   background: var(--accent-soft); color: var(--accent-ink); display: flex; align-items: center; justify-content: center; font-size: 17px;
@@ -1985,3 +2007,8 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .reward-list-title { font-weight: 600; font-size: 13.5px; }
 .reward-list-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
 .reward-list-lock { color: var(--text-muted); font-size: 14px; flex-shrink: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reward-page, .reward-list, .stamp.filled { animation: none; }
+  .reward-badge-row.ready, .reward-redeem-btn.ready { animation: none; }
+}

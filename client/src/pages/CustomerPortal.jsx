@@ -235,7 +235,7 @@ export default function CustomerPortal() {
           <p className="expiry">ไม่มีวันหมดอายุ</p>
           <p className="headline">{promotion.name || `ซื้อครบ ${buyQty} แถม 1`}</p>
 
-          <div className="reward-badge-row">
+          <div className={`reward-badge-row${loyalty.available >= 1 ? ' ready' : ''}`}>
             <span className="reward-badge"><i className="fa-solid fa-star"></i> รางวัล</span>
             <span className="reward-badge-text">
               {loyalty.available >= 1 ? 'พร้อมแลกรางวัลแล้ว!' : `อีก ${remaining} ดวงถึงรางวัล`}
@@ -247,7 +247,11 @@ export default function CustomerPortal() {
               const isRewardSlot = i === buyQty - 1;
               const filled = i < inCycle;
               return (
-                <div key={i} className={`stamp${filled ? ' filled' : ''}${isRewardSlot ? ' reward-slot' : ''}`}>
+                <div
+                  key={i}
+                  className={`stamp${filled ? ' filled' : ''}${isRewardSlot ? ' reward-slot' : ''}`}
+                  style={filled ? { animationDelay: `${i * 45}ms` } : undefined}
+                >
                   {isRewardSlot ? <i className="fa-solid fa-star"></i> : (filled ? <i className="fa-solid fa-check"></i> : i + 1)}
                 </div>
               );
@@ -259,7 +263,11 @@ export default function CustomerPortal() {
       )}
 
       {promotion && (
-        <button className="btn btn-primary btn-block reward-redeem-btn" disabled={busy || loyalty.available < 1} onClick={doRedeem}>
+        <button
+          className={`btn btn-primary btn-block reward-redeem-btn${loyalty.available >= 1 ? ' ready' : ''}`}
+          disabled={busy || loyalty.available < 1}
+          onClick={doRedeem}
+        >
           {loyalty.available < 1 ? `สะสมอีก ${remaining} แก้วเพื่อรับฟรี` : '🎁 แลกแก้วฟรี'}
         </button>
       )}
