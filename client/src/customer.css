@@ -4,11 +4,14 @@
    (olive/sage/stone). Mobile-first, single column, max 480px.
    ========================================================================== */
 
-.cp-app, .cp-app input, .cp-app button, .cp-app select {
-  font-family: 'DM Sans', 'Noto Sans Thai', system-ui, -apple-system, sans-serif;
+/* This stylesheet only ever loads on customer.html, so setting body directly
+   (rather than scoping to .cp-app) also covers the register/error/loading
+   screens, which render outside .cp-app. */
+body, input, button, select {
+  font-family: 'DM Sans', 'Kanit', system-ui, -apple-system, sans-serif;
 }
-.cp-app h1, .cp-app h2, .cp-app h3, .cp-display {
-  font-family: 'Outfit', 'Noto Sans Thai', system-ui, sans-serif;
+h1, h2, h3, .cp-display {
+  font-family: 'Outfit', 'Kanit', system-ui, sans-serif;
 }
 
 .cp-app {
@@ -28,7 +31,7 @@
   font-weight: 700; font-size: 19px; font-family: 'Outfit', sans-serif;
   box-shadow: var(--shadow-sm);
 }
-.cp-shop-name { font-size: 17px; font-weight: 700; line-height: 1.15; letter-spacing: -0.01em; font-family: 'Outfit', 'Noto Sans Thai', sans-serif; }
+.cp-shop-name { font-size: 17px; font-weight: 700; line-height: 1.15; letter-spacing: -0.01em; font-family: 'Outfit', 'Kanit', sans-serif; }
 .cp-shop-sub { font-size: 11.5px; color: var(--text-muted); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
 
 /* ---- Greeting ------------------------------------------------------------ */
@@ -59,11 +62,11 @@
 .cp-count b { font-size: 16px; font-weight: 700; }
 
 .cp-card-script {
-  font-family: 'Pacifico', 'Noto Sans Thai', cursive;
+  font-family: 'Pacifico', 'Kanit', cursive;
   font-size: 22px; line-height: 1.3; color: var(--cp-brown);
 }
 .cp-card-heading {
-  font-family: 'Outfit', 'Noto Sans Thai', sans-serif;
+  font-family: 'Outfit', 'Kanit', sans-serif;
   font-size: 28px; font-weight: 700; letter-spacing: 0.07em;
   line-height: 1.1; margin: 0 0 6px; text-transform: uppercase;
 }
@@ -112,7 +115,7 @@
 .cp-redeem {
   width: 100%; min-height: 50px; border: none; border-radius: 14px;
   background: var(--olive-600); color: #fbf8ee;
-  font-size: 16.5px; font-weight: 700; font-family: 'Outfit', 'Noto Sans Thai', sans-serif;
+  font-size: 16.5px; font-weight: 700; font-family: 'Outfit', 'Kanit', sans-serif;
   display: flex; align-items: center; justify-content: center; gap: 9px;
   cursor: pointer; touch-action: manipulation;
   transition: transform 0.15s ease, opacity 0.15s ease, filter 0.15s ease;
@@ -216,7 +219,7 @@
 .cp-modal-done {
   width: 100%; min-height: 48px; margin-top: 16px; border: none; border-radius: 13px;
   background: #d9c3a0; color: #46331b; font-size: 15.5px; font-weight: 700;
-  font-family: 'Outfit', 'Noto Sans Thai', sans-serif; cursor: pointer; touch-action: manipulation;
+  font-family: 'Outfit', 'Kanit', sans-serif; cursor: pointer; touch-action: manipulation;
 }
 .cp-modal-done:active { filter: brightness(1.06); }
 
@@ -269,7 +272,7 @@
 .cp-submit {
   width: 100%; min-height: 52px; margin-top: 6px; border: none; border-radius: 14px;
   background: var(--primary); color: #fff; font-size: 16.5px; font-weight: 700;
-  font-family: 'Outfit', 'Noto Sans Thai', sans-serif; cursor: pointer; touch-action: manipulation;
+  font-family: 'Outfit', 'Kanit', sans-serif; cursor: pointer; touch-action: manipulation;
   transition: filter 0.15s, opacity 0.15s;
 }
 .cp-submit:active { filter: brightness(1.07); }
