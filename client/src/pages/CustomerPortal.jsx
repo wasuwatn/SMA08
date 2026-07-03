@@ -15,22 +15,33 @@ function loadLiff() {
   });
 }
 
-/* ---- SVG icons — one stroke family (2px, round) ---------------------------- */
-const CupOutline = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+/* ---- SVG icons — hand-drawn indigo line-art family -------------------------- */
+// Earned stamp: line-art bubble-tea cup with pearls, drawn inside the scallop
+// seal so a collected stamp reads at a glance (empty slots stay blank).
+const CupArt = () => (
+  <svg className="cp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M6.5 8.5h11l-1.3 11a1.5 1.5 0 0 1-1.5 1.3H9.3a1.5 1.5 0 0 1-1.5-1.3l-1.3-11Z" />
     <path d="M10 8.5 12.8 3l2.7 1" />
+    <circle cx="10" cy="16.5" r="1" fill="currentColor" stroke="none" />
+    <circle cx="14" cy="16.5" r="1" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="13.5" r="1" fill="currentColor" stroke="none" />
   </svg>
 );
-// Earned stamp: filled cup with pearls — deliberately a different glyph from the
-// outline so a collected stamp reads at a glance.
-const CupFilled = () => (
-  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="M6.5 8.5h11l-1.3 11a1.5 1.5 0 0 1-1.5 1.3H9.3a1.5 1.5 0 0 1-1.5-1.3l-1.3-11Z" fill="currentColor" />
-    <path d="M10 8.5 12.8 3l2.7 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    <circle cx="10" cy="16.5" r="1.15" fill="#fff" />
-    <circle cx="13.8" cy="16.5" r="1.15" fill="#fff" />
-    <circle cx="11.9" cy="13.2" r="1.15" fill="#fff" />
+// Zig-zag seal edge for stamp slots — 24 teeth around a 64px viewBox.
+const SCALLOP_POINTS = Array.from({ length: 48 }, (_, i) => {
+  const a = (Math.PI * i) / 24;
+  const r = i % 2 === 0 ? 29 : 25.5;
+  return `${(32 + r * Math.cos(a)).toFixed(2)},${(32 + r * Math.sin(a)).toFixed(2)}`;
+}).join(' ');
+const Scallop = ({ earned }) => (
+  <svg className="cp-scallop" viewBox="0 0 64 64" aria-hidden="true">
+    <polygon points={SCALLOP_POINTS} fill={earned ? 'rgba(38, 72, 168, 0.1)' : 'none'}
+      stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+  </svg>
+);
+const Sparkle = ({ className }) => (
+  <svg className={`cp-deco ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+    <path d="M12 2.5v19M3.8 7.3l16.4 9.4M3.8 16.7l16.4-9.4" />
   </svg>
 );
 const GiftIcon = () => (
@@ -313,19 +324,22 @@ export default function CustomerPortal() {
 
       {promotion ? (
         <section className="cp-card" aria-label={`บัตรสะสมแต้ม ${inCycle} จาก ${buyQty} แต้ม`}>
-          <div className="cp-card-top">
-            <div className="cp-promo-name">{promotion.name}</div>
-            <div className="cp-cycle"><b>{inCycle}</b>/{buyQty}</div>
-          </div>
-          <div className="cp-card-sub">ซื้อครบ {buyQty} แก้ว รับฟรี 1 แก้ว</div>
+          <Sparkle className="d1" />
+          <Sparkle className="d2" />
+          <Sparkle className="d3" />
+          <div className="cp-count"><b>{inCycle}</b>/{buyQty}</div>
+          <div className="cp-card-script">{shopName.charAt(0).toUpperCase() + shopName.slice(1).toLowerCase()}</div>
+          <h2 className="cp-card-heading">Loyalty Card</h2>
+          <div className="cp-card-sub">{promotion.name} · ซื้อครบ {buyQty} แก้ว รับฟรี 1 แก้ว</div>
           <div className="cp-stamps">
             {Array.from({ length: buyQty }).map((_, i) => {
               const earned = i < inCycle;
-              const next = i === inCycle;
+              const last = i === buyQty - 1;
               return (
-                <div key={i} className={`cp-stamp${earned ? ' is-earned' : ''}${next ? ' is-next' : ''}`}
-                  aria-label={earned ? `แต้มที่ ${i + 1} ได้รับแล้ว` : `แต้มที่ ${i + 1}`}>
-                  {earned ? <CupFilled /> : <CupOutline />}
+                <div key={i} className={`cp-stamp${earned ? ' is-earned' : ''}`}
+                  aria-label={earned ? `แต้มที่ ${i + 1} ได้รับแล้ว` : last ? `แต้มที่ ${i + 1} ครบแล้วรับฟรี` : `แต้มที่ ${i + 1}`}>
+                  <Scallop earned={earned} />
+                  {earned ? <CupArt /> : last ? <span className="cp-free-label">FREE</span> : null}
                 </div>
               );
             })}

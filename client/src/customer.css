@@ -42,62 +42,74 @@
 .cp-hello { font-size: 13px; color: var(--text-muted); font-weight: 500; }
 .cp-name { font-size: 21px; font-weight: 700; letter-spacing: -0.01em; margin: 0; line-height: 1.2; word-break: break-word; }
 
-/* ---- Stamp card (hero) ---------------------------------------------------- */
+/* ---- Stamp card (hero) — cream paper + indigo line-art ---------------------- */
 .cp-card {
+  --cp-navy: #2648a8;
   position: relative; border-radius: 20px; overflow: hidden;
-  background: linear-gradient(160deg, var(--olive-600) 0%, var(--olive-800) 100%);
-  color: #fff; padding: 20px; box-shadow: var(--shadow-lg);
+  background: #f3ecdf; border: 1px solid #e5dbc6;
+  color: var(--cp-navy); padding: 22px 16px 18px;
+  box-shadow: var(--shadow-md); text-align: center;
 }
-/* soft decorative rings, pure CSS so no asset load */
-.cp-card::before, .cp-card::after {
-  content: ''; position: absolute; border-radius: 50%; pointer-events: none;
-  border: 1.5px solid rgba(255, 255, 255, 0.08);
-}
-.cp-card::before { width: 190px; height: 190px; top: -70px; right: -60px; }
-.cp-card::after { width: 120px; height: 120px; bottom: -50px; left: -40px; }
 
-.cp-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
-.cp-promo-name { font-size: 16.5px; font-weight: 700; font-family: 'Outfit', 'Noto Sans Thai', sans-serif; }
-.cp-cycle { font-family: 'DM Mono', monospace; font-size: 14px; font-weight: 500; opacity: 0.9; white-space: nowrap; }
-.cp-cycle b { font-size: 19px; font-weight: 700; }
-.cp-card-sub { font-size: 12.5px; opacity: 0.75; margin-bottom: 16px; }
+.cp-count {
+  position: absolute; top: 14px; right: 16px;
+  font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500;
+}
+.cp-count b { font-size: 16px; font-weight: 700; }
+
+.cp-card-script {
+  font-family: 'Pacifico', 'Noto Sans Thai', cursive;
+  font-size: 22px; line-height: 1.3;
+}
+.cp-card-heading {
+  font-family: 'Outfit', 'Noto Sans Thai', sans-serif;
+  font-size: 28px; font-weight: 700; letter-spacing: 0.07em;
+  line-height: 1.1; margin: 0 0 6px; text-transform: uppercase;
+}
+.cp-card-sub { font-size: 12.5px; opacity: 0.8; margin-bottom: 16px; }
+
+/* hand-drawn sparkles / beans, absolutely placed clear of the content */
+.cp-deco { position: absolute; color: var(--cp-navy); pointer-events: none; }
+.cp-deco.d1 { top: 20px; left: 18px; width: 15px; height: 15px; }
+.cp-deco.d2 { top: 44px; left: 34px; width: 9px; height: 9px; opacity: 0.8; }
+.cp-deco.d3 { top: 52px; right: 20px; width: 12px; height: 12px; opacity: 0.8; }
 
 .cp-stamps {
-  display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;
   justify-items: center; margin-bottom: 6px;
 }
 .cp-stamp {
-  width: 52px; height: 52px; border-radius: 50%; max-width: 100%;
+  width: 56px; height: 56px; max-width: 100%;
   display: flex; align-items: center; justify-content: center;
-  border: 2px dashed rgba(255, 255, 255, 0.35);
-  color: rgba(255, 255, 255, 0.55); font-size: 14px; font-weight: 600;
-  position: relative;
+  color: var(--cp-navy); position: relative;
 }
-.cp-stamp svg { width: 26px; height: 26px; }
+.cp-stamp .cp-scallop { position: absolute; inset: 0; width: 100%; height: 100%; }
+.cp-stamp .cp-icon { width: 26px; height: 26px; position: relative; }
 .cp-stamp.is-earned {
-  border: 2px solid #fff; background: #fff; color: var(--olive-700);
-  border-style: solid;
   animation: cp-stamp-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
-.cp-stamp.is-next { border-color: rgba(255, 255, 255, 0.8); color: rgba(255, 255, 255, 0.9); }
+.cp-free-label {
+  position: relative; font-family: 'Outfit', sans-serif;
+  font-size: 11.5px; font-weight: 700; letter-spacing: 0.05em;
+}
 @keyframes cp-stamp-pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .cp-stamp.is-earned { animation: none; }
 }
 
-.cp-card-note { font-size: 12.5px; opacity: 0.8; text-align: center; margin: 10px 0 14px; }
+.cp-card-note { font-size: 12.5px; opacity: 0.85; text-align: center; margin: 10px 0 14px; }
 
 .cp-free-pill {
   display: flex; align-items: center; justify-content: center; gap: 8px;
-  background: rgba(255, 255, 255, 0.14); border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent; border: 1.5px solid var(--cp-navy);
   border-radius: 99px; padding: 8px 14px; margin-bottom: 12px;
-  font-size: 14px; font-weight: 600;
+  font-size: 14px; font-weight: 600; color: var(--cp-navy);
 }
 .cp-free-pill svg { width: 18px; height: 18px; flex-shrink: 0; }
 
 .cp-redeem {
   width: 100%; min-height: 50px; border: none; border-radius: 14px;
-  background: #fff; color: var(--olive-800);
+  background: var(--cp-navy); color: #f7f2e6;
   font-size: 16.5px; font-weight: 700; font-family: 'Outfit', 'Noto Sans Thai', sans-serif;
   display: flex; align-items: center; justify-content: center; gap: 9px;
   cursor: pointer; touch-action: manipulation;
@@ -105,7 +117,7 @@
 }
 .cp-redeem svg { width: 20px; height: 20px; }
 .cp-redeem:active { transform: scale(0.98); }
-.cp-redeem:disabled { opacity: 0.55; cursor: default; background: rgba(255, 255, 255, 0.75); }
+.cp-redeem:disabled { opacity: 0.5; cursor: default; }
 
 /* ---- Stats row ------------------------------------------------------------ */
 .cp-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -201,7 +213,7 @@
 .cp-modal-hint { font-size: 12.5px; color: var(--text-muted); line-height: 1.55; }
 .cp-modal-done {
   width: 100%; min-height: 48px; margin-top: 16px; border: none; border-radius: 13px;
-  background: var(--primary); color: #fff; font-size: 15.5px; font-weight: 700;
+  background: #2648a8; color: #f7f2e6; font-size: 15.5px; font-weight: 700;
   font-family: 'Outfit', 'Noto Sans Thai', sans-serif; cursor: pointer; touch-action: manipulation;
 }
 .cp-modal-done:active { filter: brightness(1.06); }
