@@ -29,6 +29,7 @@ export default function CustomerPortal() {
   const [busy, setBusy] = useState(false);
   const [redeem, setRedeem] = useState(null);    // { code, expires_at }
   const [qrUrl, setQrUrl] = useState('');
+  const [rewardTab, setRewardTab] = useState('unclaimed'); // unclaimed | claimed
 
   useEffect(() => {
     customerApi.menuOptions().then(setMenuOptions).catch(() => setMenuOptions([]));
@@ -205,38 +206,58 @@ export default function CustomerPortal() {
   }
 
   // ready
-  const { customer, promotion, loyalty, recentOrders } = data;
+  const { promotion, loyalty, recentOrders } = data;
   const buyQty = promotion ? Number(promotion.buy_qty) : 10;
   const inCycle = promotion ? loyalty.purchased % buyQty : 0;
+  const remaining = promotion ? buyQty - inCycle : 0;
+  const claimedOrders = (recentOrders || []).filter(o => o.is_free === '1');
+  const closeLiff = () => { if (window.liff && window.liff.closeWindow) window.liff.closeWindow(); };
 
   return (
-    <div style={{ maxWidth: 480, margin: '0 auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div className="card" style={{ textAlign: 'center' }}>
-        <div className="logo" style={{ margin: '0 auto 8px' }}>K</div>
-        <h3 style={{ margin: 0 }}>สวัสดี {customer.name}</h3>
-        <p className="helper-text">บัตรสะสมแต้ม KOTEA Rewards</p>
+    <div className="reward-page">
+      <div className="reward-topbar">
+        <span className="reward-topbar-title">บัตรสะสมแต้ม</span>
+        <button className="reward-icon-btn" onClick={closeLiff} aria-label="ปิด"><i className="fa-solid fa-xmark"></i></button>
       </div>
 
+      <div className="reward-hero">KOTEA</div>
+
       {promotion ? (
-        <div className="card">
-          <div className="card-header"><h3>{promotion.name}</h3></div>
-          <StampRow filled={inCycle} total={buyQty} />
-          <div className="grid-3" style={{ marginTop: 12 }}>
-            <div className="stat-pill"><div className="label">สะสมรอบนี้</div><div className="value">{inCycle}/{buyQty}</div></div>
-            <div className="stat-pill"><div className="label">แก้วฟรีที่ใช้ได้</div><div className="value" style={{ color: 'var(--success-color)' }}>{loyalty.available}</div></div>
-            <div className="stat-pill"><div className="label">ซื้อสะสมทั้งหมด</div><div className="value">{loyalty.purchased}</div></div>
+        <div className="reward-card">
+          <div className="reward-card-avatar"><i className="fa-solid fa-mug-hot"></i></div>
+          <h2 className="store-name">KOTEA House</h2>
+          <p className="expiry">ไม่มีวันหมดอายุ</p>
+          <p className="headline">{promotion.name || `ซื้อครบ ${buyQty} แถม 1`}</p>
+
+          <div className="reward-badge-row">
+            <span className="reward-badge"><i className="fa-solid fa-star"></i> รางวัล</span>
+            <span className="reward-badge-text">
+              {loyalty.available >= 1 ? 'พร้อมแลกรางวัลแล้ว!' : `อีก ${remaining} ดวงถึงรางวัล`}
+            </span>
           </div>
-          {loyalty.pending > 0 && (
-            <p className="helper-text" style={{ marginTop: 8 }}>มีโค้ดที่รอใช้อยู่ {loyalty.pending} โค้ด</p>
-          )}
-          <button className="btn btn-primary btn-block" style={{ marginTop: 12 }} disabled={busy || loyalty.available < 1} onClick={doRedeem}>
-            {loyalty.available < 1 ? `สะสมอีก ${buyQty - inCycle} แก้วเพื่อรับฟรี` : '🎁 แลกแก้วฟรี'}
-          </button>
-          {error && <div className="login-error" style={{ marginTop: 10 }}>{error}</div>}
+
+          <div className="stamp-grid">
+            {Array.from({ length: buyQty }).map((_, i) => {
+              const isRewardSlot = i === buyQty - 1;
+              const filled = i < inCycle;
+              return (
+                <div key={i} className={`stamp${filled ? ' filled' : ''}${isRewardSlot ? ' reward-slot' : ''}`}>
+                  {isRewardSlot ? <i className="fa-solid fa-star"></i> : (filled ? <i className="fa-solid fa-check"></i> : i + 1)}
+                </div>
+              );
+            })}
+          </div>
         </div>
       ) : (
         <div className="card"><p className="helper-text">ยังไม่มีโปรโมชั่นที่เปิดใช้งาน</p></div>
       )}
+
+      {promotion && (
+        <button className="btn btn-primary btn-block reward-redeem-btn" disabled={busy || loyalty.available < 1} onClick={doRedeem}>
+          {loyalty.available < 1 ? `สะสมอีก ${remaining} แก้วเพื่อรับฟรี` : '🎁 แลกแก้วฟรี'}
+        </button>
+      )}
+      {error && <div className="login-error">{error}</div>}
 
       {redeem && (
         <div className="card" style={{ textAlign: 'center' }}>
@@ -249,6 +270,49 @@ export default function CustomerPortal() {
             <p className="helper-text" style={{ marginTop: 8 }}>ใช้กับเมนูราคาไม่เกิน {money(redeem.max_free_value)}</p>
           )}
           <p className="helper-text">โค้ดหมดอายุใน 1 ชั่วโมง</p>
+        </div>
+      )}
+
+      <div className="page-tabs reward-tabs">
+        <button className={`page-tab${rewardTab === 'unclaimed' ? ' active' : ''}`} onClick={() => setRewardTab('unclaimed')}>รางวัลที่ยังไม่ได้รับ</button>
+        <button className={`page-tab${rewardTab === 'claimed' ? ' active' : ''}`} onClick={() => setRewardTab('claimed')}>รางวัลที่แลกแล้ว</button>
+      </div>
+
+      {rewardTab === 'unclaimed' ? (
+        <div className="reward-list">
+          {promotion ? (
+            <div className="reward-list-item">
+              <div className="reward-list-thumb"><i className="fa-solid fa-gift"></i></div>
+              <div className="reward-list-meta">
+                <div className="reward-list-title">1 แก้วฟรี!</div>
+                <div className="reward-list-sub">
+                  {loyalty.available >= 1 ? 'พร้อมแลกได้เลย' : `ต้องสะสมอีก ${remaining} ดวง`}
+                </div>
+              </div>
+              {loyalty.available < 1 && <i className="fa-solid fa-lock reward-list-lock"></i>}
+            </div>
+          ) : <p className="helper-text">ยังไม่มีรางวัล</p>}
+          {loyalty.pending > 0 && (
+            <div className="reward-list-item">
+              <div className="reward-list-thumb"><i className="fa-solid fa-clock"></i></div>
+              <div className="reward-list-meta">
+                <div className="reward-list-title">โค้ดที่รอใช้ {loyalty.pending} รายการ</div>
+                <div className="reward-list-sub">แสดงโค้ดที่เคาน์เตอร์ภายใน 1 ชั่วโมง</div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="reward-list">
+          {claimedOrders.length ? claimedOrders.map((o, i) => (
+            <div className="reward-list-item" key={i}>
+              <div className="reward-list-thumb claimed"><i className="fa-solid fa-check"></i></div>
+              <div className="reward-list-meta">
+                <div className="reward-list-title">{o.menu_name}</div>
+                <div className="reward-list-sub">{o.date}</div>
+              </div>
+            </div>
+          )) : <p className="helper-text" style={{ padding: '10px 2px' }}>ยังไม่มีรางวัลที่แลกแล้ว</p>}
         </div>
       )}
 
@@ -275,22 +339,4 @@ export default function CustomerPortal() {
 
 function Centered({ children }) {
   return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>{children}</div>;
-}
-
-// Row of stamp dots — filled ones marked, the rest empty.
-function StampRow({ filled, total }) {
-  return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
-      {Array.from({ length: total }).map((_, i) => (
-        <div key={i} style={{
-          width: 36, height: 36, borderRadius: '50%',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 16, fontWeight: 600,
-          background: i < filled ? 'var(--olive-700, #5b6236)' : 'transparent',
-          color: i < filled ? '#fff' : 'var(--text-muted)',
-          border: `2px solid ${i < filled ? 'var(--olive-700, #5b6236)' : 'var(--border-color, #ddd)'}`
-        }}>{i < filled ? '☕' : i + 1}</div>
-      ))}
-    </div>
-  );
 }

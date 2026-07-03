@@ -1905,3 +1905,74 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
   /* Inputs ≥16px stop iOS from auto-zooming on focus. */
   .form-control, .login-field input { font-size: 16px; }
 }
+
+/* ---- Customer reward card (LIFF portal) -------------------------------- */
+.reward-page { max-width: 480px; margin: 0 auto; padding: 14px 16px 32px; display: flex; flex-direction: column; gap: 14px; }
+
+.reward-topbar { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px; }
+.reward-topbar-title { font-family: var(--font-display); font-weight: 700; font-size: 17px; }
+.reward-icon-btn {
+  width: 32px; height: 32px; border-radius: 50%; border: none; background: var(--surface-2);
+  color: var(--text-muted); display: inline-flex; align-items: center; justify-content: center;
+  font-size: 14px; transition: background .14s, color .14s;
+}
+.reward-icon-btn:hover { background: var(--stone-200); color: var(--text-color); }
+
+.reward-hero {
+  text-align: center; font-family: var(--font-display); font-weight: 700; letter-spacing: -0.03em;
+  font-size: 40px; color: var(--olive-800); line-height: 1;
+}
+
+.reward-card {
+  position: relative; margin-top: 30px; padding: 40px 22px 22px; border-radius: var(--radius-lg);
+  background: linear-gradient(160deg, var(--olive-600) 0%, var(--olive-800) 100%);
+  box-shadow: var(--shadow-lg); color: #fff; text-align: center;
+}
+.reward-card-avatar {
+  position: absolute; top: -30px; left: 50%; transform: translateX(-50%);
+  width: 64px; height: 64px; border-radius: 50%; background: var(--surface-color);
+  border: 3px solid var(--surface-color); box-shadow: var(--shadow-md);
+  display: flex; align-items: center; justify-content: center; font-size: 24px; color: var(--olive-600);
+}
+.reward-card .store-name { color: #fff; font-size: 20px; margin: 0 0 4px; }
+.reward-card .expiry { color: oklch(100% 0 0 / 0.72); font-size: 12px; margin: 0 0 14px; }
+.reward-card .headline { font-family: var(--font-display); font-weight: 700; font-size: 21px; margin: 0 0 18px; }
+
+.reward-badge-row {
+  display: inline-flex; align-items: center; gap: 8px; background: oklch(100% 0 0 / 0.14);
+  border-radius: 99px; padding: 6px 8px 6px 6px; margin-bottom: 18px; max-width: 100%;
+}
+.reward-badge {
+  display: inline-flex; align-items: center; gap: 5px; background: var(--sage-500); color: #fff;
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  border-radius: 99px; padding: 4px 10px;
+}
+.reward-badge-text { font-size: 12.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.stamp-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.stamp {
+  aspect-ratio: 1; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  border: 2px solid oklch(100% 0 0 / 0.35); color: oklch(100% 0 0 / 0.75);
+  font-family: var(--font-display); font-weight: 600; font-size: 14px; transition: .16s;
+}
+.stamp.filled { background: #fff; color: var(--olive-700); border-color: #fff; }
+.stamp.reward-slot { border-style: dashed; }
+.stamp.reward-slot.filled { background: var(--highlight-color); border-color: var(--highlight-color); color: #fff; border-style: solid; }
+
+.reward-redeem-btn { margin-top: -2px; }
+
+.reward-tabs { margin-top: 4px; }
+.reward-list { display: flex; flex-direction: column; gap: 10px; }
+.reward-list-item {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--surface-color);
+  border: 1px solid var(--border-color); border-radius: var(--radius-md); box-shadow: var(--shadow-sm);
+}
+.reward-list-thumb {
+  width: 42px; height: 42px; border-radius: var(--radius-sm); flex-shrink: 0;
+  background: var(--accent-soft); color: var(--accent-ink); display: flex; align-items: center; justify-content: center; font-size: 17px;
+}
+.reward-list-thumb.claimed { background: var(--sage-100); color: var(--sage-700); }
+.reward-list-meta { flex: 1; min-width: 0; }
+.reward-list-title { font-weight: 600; font-size: 13.5px; }
+.reward-list-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.reward-list-lock { color: var(--text-muted); font-size: 14px; flex-shrink: 0; }
