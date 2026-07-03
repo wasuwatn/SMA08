@@ -1924,40 +1924,48 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 }
 
 .reward-card {
-  position: relative; margin-top: 30px; padding: 40px 22px 22px; border-radius: var(--radius-lg);
-  background: linear-gradient(160deg, var(--olive-600) 0%, var(--olive-800) 100%);
-  box-shadow: var(--shadow-lg); color: #fff; text-align: center;
+  position: relative; padding: 20px 22px 22px; border-radius: var(--radius-lg);
+  background: linear-gradient(160deg, var(--olive-50) 0%, var(--surface-color) 45%, var(--olive-100) 100%);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-lg), inset 0 1px 0 oklch(100% 0 0 / 0.6);
+  text-align: center;
 }
+.reward-card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; text-align: left; }
+.reward-card-greeting { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.reward-card-greeting .greeting-label { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+.reward-card-greeting .greeting-name { font-family: var(--font-display); font-weight: 700; font-size: 15.5px; color: var(--text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reward-card-avatar {
-  position: absolute; top: -30px; left: 50%; transform: translateX(-50%);
-  width: 64px; height: 64px; border-radius: 50%; background: var(--surface-color);
-  border: 3px solid var(--surface-color); box-shadow: var(--shadow-md);
-  display: flex; align-items: center; justify-content: center; font-size: 24px; color: var(--olive-600);
+  flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%;
+  background: linear-gradient(155deg, var(--olive-500), var(--olive-700));
+  box-shadow: var(--shadow-md);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: 0.02em; color: #fff;
 }
-.reward-card .store-name { color: #fff; font-size: 20px; margin: 0 0 4px; }
-.reward-card .expiry { color: oklch(100% 0 0 / 0.72); font-size: 12px; margin: 0 0 14px; }
-.reward-card .headline { font-family: var(--font-display); font-weight: 700; font-size: 21px; margin: 0 0 18px; }
+.reward-card .store-name { color: var(--text-color); font-size: 20px; margin: 0 0 4px; }
+.reward-card .expiry { color: var(--text-muted); font-size: 12px; margin: 0 0 14px; }
+.reward-card .headline { font-family: var(--font-display); font-weight: 700; font-size: 21px; margin: 0 0 18px; color: var(--olive-800); }
 
 .reward-badge-row {
-  display: inline-flex; align-items: center; gap: 8px; background: oklch(100% 0 0 / 0.14);
-  border-radius: 99px; padding: 6px 8px 6px 6px; margin-bottom: 18px; max-width: 100%;
+  display: inline-flex; align-items: center; gap: 8px; background: var(--surface-color);
+  border: 1px solid var(--border-color); border-radius: 99px; padding: 6px 8px 6px 6px;
+  margin-bottom: 18px; max-width: 100%; box-shadow: var(--shadow-sm);
 }
 .reward-badge {
   display: inline-flex; align-items: center; gap: 5px; background: var(--sage-500); color: #fff;
   font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
-  border-radius: 99px; padding: 4px 10px;
+  border-radius: 99px; padding: 4px 10px; box-shadow: var(--shadow-sm);
 }
-.reward-badge-text { font-size: 12.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reward-badge-text { font-size: 12.5px; font-weight: 500; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .stamp-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
 .stamp {
   aspect-ratio: 1; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  border: 2px solid oklch(100% 0 0 / 0.35); color: oklch(100% 0 0 / 0.75);
-  font-family: var(--font-display); font-weight: 600; font-size: 14px; transition: .16s;
+  border: 2px solid var(--olive-200); background: var(--surface-color); color: var(--text-muted);
+  font-family: var(--font-display); font-weight: 600; font-size: 14px; transition: .16s; box-shadow: var(--shadow-sm);
 }
-.stamp.filled { background: #fff; color: var(--olive-700); border-color: #fff; }
-.stamp.reward-slot { border-style: dashed; }
-.stamp.reward-slot.filled { background: var(--highlight-color); border-color: var(--highlight-color); color: #fff; border-style: solid; }
+.stamp.filled { background: linear-gradient(155deg, var(--olive-500), var(--olive-700)); color: #fff; border-color: var(--olive-700); box-shadow: var(--shadow-md); }
+.stamp.reward-slot { border-style: dashed; border-color: var(--olive-300); }
+.stamp.reward-slot.filled { background: linear-gradient(155deg, var(--highlight-color), var(--gold)); border-color: var(--highlight-color); color: #fff; border-style: solid; box-shadow: var(--shadow-md); }
 
 .reward-redeem-btn { margin-top: -2px; }
 
@@ -1970,6 +1978,7 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .reward-list-thumb {
   width: 42px; height: 42px; border-radius: var(--radius-sm); flex-shrink: 0;
   background: var(--accent-soft); color: var(--accent-ink); display: flex; align-items: center; justify-content: center; font-size: 17px;
+  box-shadow: var(--shadow-sm);
 }
 .reward-list-thumb.claimed { background: var(--sage-100); color: var(--sage-700); }
 .reward-list-meta { flex: 1; min-width: 0; }

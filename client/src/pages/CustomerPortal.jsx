@@ -206,7 +206,7 @@ export default function CustomerPortal() {
   }
 
   // ready
-  const { promotion, loyalty, recentOrders } = data;
+  const { customer, promotion, loyalty, recentOrders } = data;
   const buyQty = promotion ? Number(promotion.buy_qty) : 10;
   const inCycle = promotion ? loyalty.purchased % buyQty : 0;
   const remaining = promotion ? buyQty - inCycle : 0;
@@ -224,7 +224,13 @@ export default function CustomerPortal() {
 
       {promotion ? (
         <div className="reward-card">
-          <div className="reward-card-avatar"><i className="fa-solid fa-mug-hot"></i></div>
+          <div className="reward-card-top">
+            <div className="reward-card-greeting">
+              <span className="greeting-label">สวัสดี</span>
+              <span className="greeting-name">{customer.name}</span>
+            </div>
+            <div className="reward-card-avatar">{initials(customer.name)}</div>
+          </div>
           <h2 className="store-name">KOTEA House</h2>
           <p className="expiry">ไม่มีวันหมดอายุ</p>
           <p className="headline">{promotion.name || `ซื้อครบ ${buyQty} แถม 1`}</p>
@@ -339,4 +345,12 @@ export default function CustomerPortal() {
 
 function Centered({ children }) {
   return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>{children}</div>;
+}
+
+// Short avatar label from a customer's name, e.g. "สมชาย ใจดี" -> "สใ", "Somchai" -> "SO".
+function initials(name) {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return parts[0].slice(0, 2).toUpperCase();
 }
