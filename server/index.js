@@ -273,10 +273,16 @@ app.get('/api/customer/me', requireCustomer, async (req, res) => {
     const promotion = await activeStampPromotion();
     const loyalty = await loyaltyFor(customer.name, promotion, customer.id);
     const { rows: recentOrders } = await pool.query(
-      'SELECT date, menu_name, total_price, is_free FROM salefront WHERE customer_id = $1 ORDER BY id DESC LIMIT 10',
+      'SELECT date, menu_name, total_price, is_free FROM salefront WHERE customer_id = $1 ORDER BY id DESC LIMIT 20',
       [customer.id]
     );
-    res.json({ customer, promotion, loyalty, recentOrders });
+    const { rows: coupons } = await pool.query(
+      'SELECT code, status, created_at, expires_at, used_at, used_order_no FROM redemptions WHERE customer_id = $1 ORDER BY id DESC LIMIT 20',
+      [customer.id]
+    );
+    // Shop name comes from the same settings row the receipt header uses.
+    const { rows: [shop] } = await pool.query('SELECT * FROM settings LIMIT 1');
+    res.json({ customer, promotion, loyalty, recentOrders, coupons, shopName: (shop && shop.shop_name) || 'KOTEA' });
   } catch (e) {
     fail(res, e);
   }
