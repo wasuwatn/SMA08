@@ -273,7 +273,7 @@ app.get('/api/customer/me', requireCustomer, async (req, res) => {
     const promotion = await activeStampPromotion();
     const loyalty = await loyaltyFor(customer.name, promotion, customer.id);
     const { rows: recentOrders } = await pool.query(
-      'SELECT date, menu_name, total_price, is_free FROM salefront WHERE customer_id = $1 ORDER BY id DESC LIMIT 20',
+      'SELECT date, menu_name, total_price, is_free FROM salefront WHERE customer_id = $1 ORDER BY id DESC LIMIT 10',
       [customer.id]
     );
     const { rows: coupons } = await pool.query(

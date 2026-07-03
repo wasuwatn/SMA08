@@ -35,7 +35,7 @@ const SCALLOP_POINTS = Array.from({ length: 48 }, (_, i) => {
 }).join(' ');
 const Scallop = ({ earned }) => (
   <svg className="cp-scallop" viewBox="0 0 64 64" aria-hidden="true">
-    <polygon points={SCALLOP_POINTS} fill={earned ? 'rgba(91, 98, 54, 0.12)' : 'none'}
+    <polygon points={SCALLOP_POINTS} fill={earned ? 'rgba(61, 63, 33, 0.14)' : 'none'}
       stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
   </svg>
 );
@@ -88,20 +88,10 @@ export default function CustomerPortal() {
   const [regPhone, setRegPhone] = useState('');
   const [regGender, setRegGender] = useState('NA');
   const [regDob, setRegDob] = useState('');
-  const [regFavorites, setRegFavorites] = useState([]);
-  const [menuOptions, setMenuOptions] = useState([]);
   const [busy, setBusy] = useState(false);
   const [redeem, setRedeem] = useState(null);    // { code, expires_at, max_free_value }
   const [qrUrl, setQrUrl] = useState('');
   const [tab, setTab] = useState('orders');      // orders | coupons
-
-  useEffect(() => {
-    customerApi.menuOptions().then(setMenuOptions).catch(() => setMenuOptions([]));
-  }, []);
-
-  const toggleFavorite = (name) => {
-    setRegFavorites(list => list.includes(name) ? list.filter(n => n !== name) : [...list, name]);
-  };
 
   const loadMe = useCallback(async () => {
     const me = await customerApi.me();
@@ -182,7 +172,7 @@ export default function CustomerPortal() {
     try {
       const res = await customerApi.register({
         phone: regPhone.trim(), gender: regGender,
-        date_of_birth: regDob || null, favorite_menu: regFavorites
+        date_of_birth: regDob || null
       }, pendingToken);
       setToken(res.token);
       await loadMe();
@@ -276,22 +266,6 @@ export default function CustomerPortal() {
             <label htmlFor="reg-dob">วันเกิด</label>
             <input id="reg-dob" className="cp-input" type="date" value={regDob} onChange={(e) => setRegDob(e.target.value)} />
           </div>
-          {menuOptions.length > 0 && (
-            <div className="cp-field">
-              <label>ชอบกินเมนูอะไร</label>
-              <div className="cp-chips">
-                {menuOptions.map(name => (
-                  <button key={name} type="button" className="cp-chip"
-                    aria-pressed={regFavorites.includes(name)} onClick={() => toggleFavorite(name)}>
-                    {regFavorites.includes(name) && (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 12.5 9.5 18 20 6.5" /></svg>
-                    )}
-                    {name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
           <button className="cp-submit" type="submit" disabled={busy}>
             {busy ? 'กำลังบันทึก…' : 'เริ่มสะสมแต้ม'}
           </button>
