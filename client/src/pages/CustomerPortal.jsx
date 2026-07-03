@@ -35,7 +35,7 @@ const SCALLOP_POINTS = Array.from({ length: 48 }, (_, i) => {
 }).join(' ');
 const Scallop = ({ earned }) => (
   <svg className="cp-scallop" viewBox="0 0 64 64" aria-hidden="true">
-    <polygon points={SCALLOP_POINTS} fill={earned ? 'rgba(38, 72, 168, 0.1)' : 'none'}
+    <polygon points={SCALLOP_POINTS} fill={earned ? 'rgba(91, 98, 54, 0.12)' : 'none'}
       stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
   </svg>
 );
