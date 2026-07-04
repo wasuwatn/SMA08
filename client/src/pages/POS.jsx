@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import QRCode from 'qrcode';
 import { useData } from '../lib/data.jsx';
 import { api } from '../lib/api.js';
@@ -25,6 +25,45 @@ const CONTAINERS = [
   { value: 'Bottle', label: 'Bottle', adj: -5 }
 ];
 
+// Catalog tiles have no product photos in this app, so each one gets a
+// "sticker" look instead — a color + shape derived from the drink's name, so
+// the same drink always renders the same way but the board reads as varied
+// as the reference design (mixed circles/polygons/starbursts per drink).
+const BADGE_COLORS = [
+  'oklch(58% 0.16 250)', 'oklch(55% 0.18 320)', 'oklch(58% 0.19 25)', 'oklch(56% 0.14 150)',
+  'oklch(68% 0.16 55)', 'oklch(60% 0.11 190)', 'oklch(62% 0.16 350)', 'oklch(66% 0.15 85)'
+];
+const BADGE_SHAPES = ['circle', 'burst', 'hexagon', 'heptagon', 'nonagon'];
+
+function hashString(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+function polygonClipPath(sides, { scallop } = {}) {
+  const total = scallop ? sides * 2 : sides;
+  const pts = [];
+  for (let k = 0; k < total; k++) {
+    const angle = (-90 + (k * 360) / total) * (Math.PI / 180);
+    const r = scallop && k % 2 === 1 ? 41 : 50;
+    pts.push(`${(50 + r * Math.cos(angle)).toFixed(2)}% ${(50 + r * Math.sin(angle)).toFixed(2)}%`);
+  }
+  return `polygon(${pts.join(',')})`;
+}
+const SHAPE_CLIP_PATHS = {
+  hexagon: polygonClipPath(6), heptagon: polygonClipPath(7),
+  nonagon: polygonClipPath(9), burst: polygonClipPath(12, { scallop: true })
+  // 'circle' just uses border-radius, no clip-path needed.
+};
+
+function badgeStyleFor(name) {
+  const h = hashString(name);
+  const color = BADGE_COLORS[h % BADGE_COLORS.length];
+  const shape = BADGE_SHAPES[Math.floor(h / BADGE_COLORS.length) % BADGE_SHAPES.length];
+  return { color, clipPath: SHAPE_CLIP_PATHS[shape] };
+}
+
 export default function POS() {
   const { user, data, settings, pushToast, checkoutPos, reload } = useData();
   const drinks = data.menuname.filter(d => d.status === 'Active');
@@ -32,6 +71,24 @@ export default function POS() {
   const sweetnessLevels = (settings.sweetness_levels || 'No Sweet, 25%, 50%, 100%').split(',').map(s => s.trim());
 
   const [cat, setCat] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+
+  // Which topbar/filter dropdown is open ('reg' | 'ticket' | 'more' | 'cat' | null)
+  const [openMenu, setOpenMenu] = useState(null);
+  const topbarRef = useRef(null);
+  const customerInputRef = useRef(null);
+  useEffect(() => {
+    if (!openMenu) return;
+    const onDocClick = (e) => { if (topbarRef.current && !topbarRef.current.contains(e.target)) setOpenMenu(null); };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [openMenu]);
+  const toggleMenu = (name) => setOpenMenu(m => (m === name ? null : name));
+  const focusCustomerField = () => {
+    const el = customerInputRef.current;
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus(); }
+  };
 
   // Cart & Order details
   const [cart, setCart] = useState([]);
@@ -40,6 +97,11 @@ export default function POS() {
   const [customer, setCustomer] = useState('');
   const [address, setAddress] = useState('');
   const [deliveryPlatform, setDeliveryPlatform] = useState('');
+
+  // Tickets parked via SAVE — held here until reopened, so a cashier can
+  // start a fresh order without losing an in-progress one.
+  const [parkedTickets, setParkedTickets] = useState([]);
+  const ticketCount = Math.max(1, parkedTickets.length + (cart.length > 0 ? 1 : 0));
 
   // Promo code & discounts
   const [promoCode, setPromoCode] = useState('');
@@ -95,7 +157,8 @@ export default function POS() {
   const [loyalty, setLoyalty] = useState({ purchased: 0, given: 0, available: 0, pending: 0 });
 
   // Filtered drink catalog
-  const shown = cat === 'All' ? drinks : drinks.filter(d => d.category === cat);
+  const shown = (cat === 'All' ? drinks : drinks.filter(d => d.category === cat))
+    .filter(d => !searchQuery.trim() || d.name.toLowerCase().includes(searchQuery.trim().toLowerCase()));
 
   // Customizer selections & calculations
   const childItems = selected ? data.childmenu.filter(c => c.menu_name === selected.name) : [];
@@ -349,6 +412,46 @@ export default function POS() {
     pushToast('Item removed.', 'info');
   };
 
+  // Park / resume tickets (SAVE button) — snapshots the whole in-progress
+  // order so the register can be cleared for the next customer without
+  // losing it.
+  const snapshotTicket = () => ({
+    id: Math.random().toString(36).slice(2, 9),
+    cart, orderType, customer, address, deliveryPlatform,
+    promoCode, appliedDiscount, redeemCode, redemption, payMethod, cashReceived
+  });
+  const applyTicket = (t) => {
+    setCart(t.cart); setOrderType(t.orderType); setCustomer(t.customer); setAddress(t.address);
+    setDeliveryPlatform(t.deliveryPlatform); setPromoCode(t.promoCode); setAppliedDiscount(t.appliedDiscount);
+    setRedeemCode(t.redeemCode); setRedemption(t.redemption); setPayMethod(t.payMethod); setCashReceived(t.cashReceived);
+  };
+  const clearActiveTicket = () => {
+    setCart([]); setCustomer(''); setAddress(''); setDeliveryPlatform('');
+    setPromoCode(''); setAppliedDiscount({ code: '', type: 'none', value: 0 });
+    setRedeemCode(''); setRedemption(null); setPayMethod('Cash'); setCashReceived('');
+  };
+  const parkTicket = () => {
+    if (!cart.length) return;
+    setParkedTickets(prev => [...prev, snapshotTicket()]);
+    clearActiveTicket();
+    setOpenMenu(null);
+    pushToast('Order parked — tap Ticket to bring it back.', 'info');
+  };
+  const resumeTicket = (id) => {
+    const t = parkedTickets.find(p => p.id === id);
+    if (!t) return;
+    setParkedTickets(prev => {
+      const rest = prev.filter(p => p.id !== id);
+      return cart.length ? [...rest, snapshotTicket()] : rest;
+    });
+    applyTicket(t);
+    setOpenMenu(null);
+  };
+  const discardParkedTicket = (id, e) => {
+    e.stopPropagation();
+    setParkedTickets(prev => prev.filter(p => p.id !== id));
+  };
+
   // Applying promo codes
   const handleApplyPromo = () => {
     const code = promoCode.trim().toUpperCase();
@@ -569,76 +672,156 @@ export default function POS() {
 
             {/* Left Column: Menu Catalog */}
             <div className="sage-pos-menu-pane">
-              <div className="sage-pos-header">
-                <div className="sage-pos-header-title">
-                  <h2>Menu</h2>
-                  <p>Single-origin coffee · seasonal menu</p>
-                </div>
-                <div className="sage-pos-header-actions">
-                  <button
-                    className="sage-pos-history-btn"
-                    title={openShift ? `Opened ${String(openShift.opened_at || '').replace('T', ' ').slice(0, 16)} by ${openShift.opened_by}` : 'Open a shift so sales are tied to a drawer count'}
-                    onClick={() => {
-                      setShiftCash(''); setShiftNote('');
-                      if (openShift) refreshRecentSales(); // fresh cash estimate before closing
-                      setShiftModal(openShift ? 'close' : 'open');
-                    }}
-                  >
-                    <i className="fa-solid fa-cash-register"></i>
-                    {openShift ? ` Close shift #${openShift.id}` : ' Open shift'}
-                  </button>
-                  <button className="sage-pos-history-btn" onClick={handleOpenHistory}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="9"></circle>
-                      <path d="M12 7.5V12l3 1.6"></path>
-                    </svg>
-                    Sales history
-                  </button>
+            <div ref={topbarRef}>
+              {/* Ticket-style top bar */}
+              <div className="pos-topbar">
+                <button className="pos-icon-btn" title="Order type & shift" onClick={() => toggleMenu('reg')}>
+                  <i className="fa-solid fa-bars"></i>
+                </button>
 
-                  <div className="sage-pos-segmented">
-                    {['Dine-in', 'Takeaway', 'Delivery'].map(type => (
-                      <button
-                        key={type}
-                        className={orderType === type ? 'active' : ''}
-                        onClick={() => { setOrderType(type); if (type !== 'Delivery') setDeliveryPlatform(''); }}
-                      >
-                        {type}
+                <button className="pos-ticket-btn" onClick={() => toggleMenu('ticket')}>
+                  <i className="fa-solid fa-receipt"></i>
+                  <span>Ticket</span>
+                  <span className="pos-ticket-badge">{ticketCount}</span>
+                </button>
+
+                <div className="pos-topbar-actions">
+                  <button className="pos-icon-btn" title="Assign customer" onClick={focusCustomerField}>
+                    <i className="fa-solid fa-user-plus"></i>
+                  </button>
+                  <button className="pos-icon-btn" title="More" onClick={() => toggleMenu('more')}>
+                    <i className="fa-solid fa-ellipsis-vertical"></i>
+                  </button>
+                </div>
+
+                {openMenu === 'reg' && (
+                  <div className="pos-dropdown pos-dropdown-left">
+                    <div className="pos-dropdown-label">Order type</div>
+                    <div className="sage-pos-segmented">
+                      {['Dine-in', 'Takeaway', 'Delivery'].map(type => (
+                        <button
+                          key={type}
+                          className={orderType === type ? 'active' : ''}
+                          onClick={() => { setOrderType(type); if (type !== 'Delivery') setDeliveryPlatform(''); }}
+                        >
+                          {type}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      className="sage-pos-history-btn pos-dropdown-btn"
+                      title={openShift ? `Opened ${String(openShift.opened_at || '').replace('T', ' ').slice(0, 16)} by ${openShift.opened_by}` : 'Open a shift so sales are tied to a drawer count'}
+                      onClick={() => {
+                        setShiftCash(''); setShiftNote('');
+                        if (openShift) refreshRecentSales(); // fresh cash estimate before closing
+                        setShiftModal(openShift ? 'close' : 'open');
+                        setOpenMenu(null);
+                      }}
+                    >
+                      <i className="fa-solid fa-cash-register"></i>
+                      {openShift ? ` Close shift #${openShift.id}` : ' Open shift'}
+                    </button>
+                  </div>
+                )}
+
+                {openMenu === 'ticket' && (
+                  <div className="pos-dropdown pos-dropdown-center">
+                    <div className="pos-dropdown-label">Parked orders ({parkedTickets.length})</div>
+                    {parkedTickets.length === 0 ? (
+                      <p className="helper-text" style={{ padding: '2px 2px 4px' }}>No parked orders yet — SAVE keeps one here.</p>
+                    ) : parkedTickets.map((t, i) => (
+                      <button key={t.id} className="pos-parked-item" onClick={() => resumeTicket(t.id)}>
+                        <span>Ticket {i + 1} · {t.cart.length} item{t.cart.length !== 1 ? 's' : ''} · {t.customer.trim() || 'Walk-in'}</span>
+                        <span className="pos-parked-remove" onClick={(e) => discardParkedTicket(t.id, e)}>
+                          <i className="fa-solid fa-xmark"></i>
+                        </span>
                       </button>
                     ))}
                   </div>
-                </div>
+                )}
+
+                {openMenu === 'more' && (
+                  <div className="pos-dropdown pos-dropdown-right">
+                    <button className="sage-pos-history-btn pos-dropdown-btn" onClick={() => { handleOpenHistory(); setOpenMenu(null); }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="9"></circle>
+                        <path d="M12 7.5V12l3 1.6"></path>
+                      </svg>
+                      Sales history
+                    </button>
+                    {lastReceipt && (
+                      <button className="sage-pos-history-btn pos-dropdown-btn" onClick={() => { setReceiptData(lastReceipt); setOpenMenu(null); }}>
+                        <i className="fa-solid fa-print"></i> Print last receipt
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {/* Scrolling Category Pill Row */}
-              <div className="sage-pos-cats">
-                {categories.map(c => (
-                  <button
-                    key={c}
-                    className={`sage-pos-cat-pill ${c === cat ? 'active' : ''}`}
-                    onClick={() => setCat(c)}
-                  >
-                    {c}
-                  </button>
-                ))}
+              {/* SAVE / CHARGE split action bar */}
+              <div className="pos-action-bar">
+                <button className="pos-action-btn save" disabled={cart.length === 0} onClick={parkTicket}>
+                  SAVE
+                </button>
+                <button
+                  className="pos-action-btn charge"
+                  disabled={cart.length === 0 || (orderType === 'Delivery' && !deliveryPlatform)}
+                  onClick={checkout}
+                >
+                  CHARGE
+                  <span className="pos-action-total">{money(cartTotal)}</span>
+                </button>
               </div>
+
+              {/* Category filter + search */}
+              <div className="pos-filter-row">
+                <button className="pos-filter-dropdown" onClick={() => toggleMenu('cat')}>
+                  <span>{cat === 'All' ? 'All items' : cat}</span>
+                  <i className="fa-solid fa-chevron-down" style={{ fontSize: 11 }}></i>
+                </button>
+                <button className={`pos-search-btn${showSearch ? ' active' : ''}`} title="Search menu" onClick={() => setShowSearch(v => !v)}>
+                  <i className="fa-solid fa-magnifying-glass"></i>
+                </button>
+                {openMenu === 'cat' && (
+                  <div className="pos-dropdown pos-dropdown-filter">
+                    {categories.map(c => (
+                      <button
+                        key={c}
+                        className={`pos-dropdown-item${c === cat ? ' active' : ''}`}
+                        onClick={() => { setCat(c); setOpenMenu(null); }}
+                      >
+                        {c === 'All' ? 'All items' : c}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {showSearch && (
+                <div className="pos-search-row">
+                  <input
+                    className="pos-search-input" autoFocus value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search menu…"
+                  />
+                </div>
+              )}
+            </div>
 
               {/* Product Grid */}
               <div className="sage-pos-grid-container">
                 {shown.length ? (
-                  <div className="sage-pos-grid">
-                    {shown.map(d => (
-                      <button key={d.id} className="sage-pos-card" onClick={() => handleOpenCustomizer(d)}>
-                        <div className="sage-pos-card-info">
-                          <span className="sage-pos-card-cat">{d.category}</span>
-                          <span className="sage-pos-card-name">{d.name}</span>
-                          <span className="sage-pos-card-desc">Premium brewed cafe register beverage</span>
-                        </div>
-                        <div className="sage-pos-card-footer">
-                          <span className="sage-pos-card-price">{money(d.front_price)}</span>
-                          <span className="sage-pos-card-add">+</span>
-                        </div>
-                      </button>
-                    ))}
+                  <div className="pos-badge-grid">
+                    {shown.map(d => {
+                      const { color, clipPath } = badgeStyleFor(d.name);
+                      return (
+                        <button
+                          key={d.id} className="pos-badge-card"
+                          style={{ background: color, clipPath }}
+                          onClick={() => handleOpenCustomizer(d)}
+                        >
+                          <span className="pos-badge-name">{d.name}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="sage-pos-empty">
@@ -661,6 +844,7 @@ export default function POS() {
                   <div className="sage-pos-order-field">
                     <span className="sage-pos-field-label">Customer</span>
                     <input
+                      ref={customerInputRef}
                       className="sage-pos-input"
                       list="cust-list"
                       value={customer}
