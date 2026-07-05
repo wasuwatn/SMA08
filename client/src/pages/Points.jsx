@@ -6,7 +6,8 @@ import { api } from '../lib/api.js';
 // send it to the customer over LINE chat. The customer opens it in the rewards
 // portal (customer.html?claim=<token>) and the points land on their account.
 // Links never expire; unclaimed ones can be voided below.
-const POINT_CHOICES = [1, 2, 3, 5, 10];
+const POINT_CHOICES = Array.from({ length: 15 }, (_, i) => i + 1); // 1-15
+const CUSTOM = 'custom';
 
 // Always route through liff.line.me when a LIFF ID is configured: LINE
 // resolves that URL straight to the LIFF app's registered Endpoint URL and
@@ -27,9 +28,12 @@ const fmtTs = (v) => (v ? String(v).replace('T', ' ').slice(0, 16) : '');
 
 export default function Points() {
   const { pushToast } = useData();
-  const [points, setPoints] = useState(POINT_CHOICES[0]);
+  const [pointsChoice, setPointsChoice] = useState(String(POINT_CHOICES[0]));
+  const [customPoints, setCustomPoints] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const points = pointsChoice === CUSTOM ? Number(customPoints) : Number(pointsChoice);
+  const pointsValid = Number.isInteger(points) && points > 0;
   const [links, setLinks] = useState([]);
   // The most recently created link, echoed in a read-only field as a fallback
   // for when the clipboard API is unavailable (plain HTTP, older WebView).
@@ -50,12 +54,14 @@ export default function Points() {
   };
 
   const createLink = async () => {
+    if (!pointsValid) { pushToast('Enter a valid whole number of points.', 'warning'); return; }
     setBusy(true);
     try {
-      const r = await api.pointsLink({ points: Number(points), note: note.trim() || undefined });
+      const r = await api.pointsLink({ points, note: note.trim() || undefined });
       const url = claimUrl(r.token);
       setLastUrl(url);
       setNote('');
+      setCustomPoints('');
       refresh();
       const copied = await copyText(url);
       pushToast(copied
@@ -92,17 +98,26 @@ export default function Points() {
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', padding: '0 16px 16px' }}>
           <div className="field" style={{ margin: 0 }}>
             <label>Points</label>
-            <select className="form-control" style={{ width: 120 }} value={points}
-              onChange={(e) => setPoints(Number(e.target.value))}>
+            <select className="form-control" style={{ width: 120 }} value={pointsChoice}
+              onChange={(e) => setPointsChoice(e.target.value)}>
               {POINT_CHOICES.map(p => <option key={p} value={p}>{p} point{p > 1 ? 's' : ''}</option>)}
+              <option value={CUSTOM}>Other…</option>
             </select>
           </div>
+          {pointsChoice === CUSTOM && (
+            <div className="field" style={{ margin: 0 }}>
+              <label>Custom amount</label>
+              <input className="form-control" style={{ width: 120 }} type="number" min="1" step="1"
+                value={customPoints} placeholder="e.g. 25" autoFocus
+                onChange={(e) => setCustomPoints(e.target.value)} />
+            </div>
+          )}
           <div className="field" style={{ margin: 0, flex: 1, minWidth: 180 }}>
             <label>Note (optional)</label>
             <input className="form-control" value={note} placeholder="e.g. order #0042, review reward"
               onChange={(e) => setNote(e.target.value)} />
           </div>
-          <button className="btn btn-primary" disabled={busy} onClick={createLink}>
+          <button className="btn btn-primary" disabled={busy || !pointsValid} onClick={createLink}>
             <i className="fa-solid fa-link"></i> Create link &amp; copy
           </button>
         </div>

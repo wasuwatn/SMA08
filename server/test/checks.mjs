@@ -126,27 +126,61 @@ export async function runChecks(BASE) {
   let me = await req('GET', '/api/customer/me', undefined, custToken);
   ok('portal /me shows balance + 2 history rows', me.data.pointsBalance === 10 && Array.isArray(me.data.pointsHistory) && me.data.pointsHistory.length === 2, JSON.stringify({ b: me.data.pointsBalance, h: me.data.pointsHistory?.length }));
 
-  const freeCup = (name, promoId, txn) => req('POST', '/api/checkout/pos', {
-    sales: [{ date: '2026-07-02', customer_name: name, menu_name: 'Espresso', quantity: 1, total_price: 0, cashier: 'staff', is_free: '1', promotion_id: promoId }],
+  ok('staff token rejected on /api/customer/redeem', (await req('POST', '/api/customer/redeem', {}, staff)).status === 401);
+
+  r = await req('POST', '/api/customer/redeem', {}, custToken);
+  ok('mint self-redeem code (balance 10 covers 1 free cup)', r.status === 200 && /^\d{6}$/.test(r.data.code), JSON.stringify(r.data));
+  const code = r.data.code;
+
+  r = await req('POST', '/api/customer/redeem', {}, custToken);
+  ok('minting a 2nd code before the 1st is used -> 409 (pending reserves the credit)', r.status === 409, `got ${r.status}`);
+
+  r = await req('GET', '/api/redemption/000000', undefined, staff);
+  ok('unknown code -> 404', r.status === 404, `got ${r.status}`);
+  r = await req('GET', `/api/redemption/${code}`, undefined, staff);
+  ok('staff lookup resolves the customer', r.status === 200 && r.data.customer_id === custId, JSON.stringify(r.data));
+  const redemptionId = r.data.id;
+
+  const freeCup = (name, redemption_id, txn) => req('POST', '/api/checkout/pos', {
+    sales: [{ date: '2026-07-02', customer_name: name, menu_name: 'Espresso', quantity: 1, total_price: 0, cashier: 'staff', is_free: '1', promotion_id: '1' }],
+    requirements: [], date: '2026-07-02', client_txn_id: txn, redemption_id
+  }, staff);
+
+  const [b1, b2] = await Promise.all([
+    freeCup(custName, redemptionId, 't-pts-spend-race-1'),
+    freeCup(custName, redemptionId, 't-pts-spend-race-2')
+  ]);
+  const raceCodes = [b1.status, b2.status].sort();
+  ok('concurrent burn of the same code: one 200, one 409', raceCodes[0] === 200 && raceCodes[1] === 409, `got ${raceCodes}`);
+  r = await req('GET', `/api/points/balance?customer_id=${custId}`, undefined, staff);
+  ok('balance charged exactly once: 10 -> 0', r.data.balance === 0, `got ${r.data.balance}`);
+
+  r = await req('GET', `/api/redemption/${code}`, undefined, staff);
+  ok('used code no longer resolves', r.status === 404, `got ${r.status}`);
+  r = await req('POST', '/api/customer/redeem', {}, custToken);
+  ok('no points left -> 409', r.status === 409, `got ${r.status}`);
+
+  console.log('\n[5b] Marking a cup free directly (no redeem code needed)');
+  const directFreeCup = (name, txn) => req('POST', '/api/checkout/pos', {
+    sales: [{ date: '2026-07-02', customer_name: name, menu_name: 'Espresso', quantity: 1, total_price: 0, cashier: 'staff', is_free: '1', promotion_id: '1' }],
     requirements: [], date: '2026-07-02', client_txn_id: txn
   }, staff);
 
-  r = await freeCup(custName, '1', 't-pts-spend-1');
-  ok('point-funded free cup accepted', r.status === 200, `got ${r.status} ${JSON.stringify(r.data)}`);
+  r = await req('POST', '/api/points/grant', { customer_id: custId, points: 10 }, admin);
+  ok('grant 10 more points for the direct-mark test', r.status === 200 && r.data.balance === 10, JSON.stringify(r.data));
+  r = await directFreeCup(custName, 't-direct-free-1');
+  ok('direct free-cup mark (no redemption_id) accepted', r.status === 200, `got ${r.status} ${JSON.stringify(r.data)}`);
   r = await req('GET', `/api/points/balance?customer_id=${custId}`, undefined, staff);
-  ok('balance charged 10 -> 0', r.data.balance === 0, `got ${r.data.balance}`);
-  r = await freeCup(custName, '1', 't-pts-spend-2');
-  ok('insufficient points -> 409', r.status === 409, `got ${r.status}`);
-  r = await freeCup('Walk-in', '1', 't-pts-spend-3');
-  ok('point-funded cup without a customer -> 409', r.status === 409, `got ${r.status}`);
-  r = await freeCup('Walk-in', '', 't-pts-spend-4');
-  ok('goodwill comp (no promotion_id) accepted', r.status === 200, `got ${r.status}`);
-  r = await req('GET', `/api/points/balance?customer_id=${custId}`, undefined, staff);
-  ok('goodwill comp did not touch the balance', r.data.balance === 0, `got ${r.data.balance}`);
-
-  ok('old /api/customer/redeem is gone', (await req('POST', '/api/customer/redeem', {}, custToken)).status === 401);
-  ok('old /api/redemption/:code is gone', (await req('GET', '/api/redemption/123456', undefined, staff)).status === 404);
-  ok('old /api/loyalty is gone', (await req('GET', '/api/loyalty?customer_id=1', undefined, staff)).status === 404);
+  ok('balance charged without ever entering a code: 10 -> 0', r.data.balance === 0, `got ${r.data.balance}`);
+  r = await directFreeCup(custName, 't-direct-free-2');
+  ok('insufficient points on direct mark -> 409', r.status === 409, `got ${r.status}`);
+  r = await directFreeCup('Walk-in', 't-direct-free-3');
+  ok('point-funded cup without a resolvable customer -> 409', r.status === 409, `got ${r.status}`);
+  r = await req('POST', '/api/checkout/pos', {
+    sales: [{ date: '2026-07-02', customer_name: 'Walk-in', menu_name: 'Espresso', quantity: 1, total_price: 0, cashier: 'staff', is_free: '1', promotion_id: '' }],
+    requirements: [], date: '2026-07-02', client_txn_id: 't-direct-free-4'
+  }, staff);
+  ok('goodwill comp (empty promotion_id) needs no customer or points', r.status === 200, `got ${r.status}`);
 
   console.log('\n[6] Shifts & Z-report');
   let shift = await req('POST', '/api/shift/open', { opening_cash: 500 }, staff);

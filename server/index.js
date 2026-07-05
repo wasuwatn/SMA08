@@ -182,6 +182,25 @@ async function pointsBalanceFor(customerId, client = pool) {
   return Number(r.balance);
 }
 
+// Self-redeem availability: how many free cups this customer can mint a code
+// for right now. Mirrors the pre-points stamp math (loyaltyFor): `pending`
+// (still-live codes not yet burned) is subtracted so a customer can't mint
+// more codes than their balance actually covers, but doesn't touch the
+// balance itself — that only happens when a code is burned at POS.
+async function redemptionAvailability(customerId, promotion, client = pool) {
+  const pointsPerFree = promotion ? Number(promotion.buy_qty) || 0 : 0;
+  const maxFreeValue = promotion ? promotion.max_free_value : null;
+  const balance = await pointsBalanceFor(customerId, client);
+  if (customerId == null || !pointsPerFree) return { balance, pointsPerFree, maxFreeValue, available: 0, pending: 0 };
+  const { rows: [p] } = await client.query(
+    "SELECT COUNT(*) AS pending FROM redemptions WHERE customer_id = $1 AND status = 'pending' AND expires_at > $2",
+    [customerId, new Date().toISOString()]
+  );
+  const pending = Number(p.pending);
+  const available = Math.max(0, Math.floor(balance / pointsPerFree) - pending);
+  return { balance, pointsPerFree, maxFreeValue, available, pending };
+}
+
 app.post('/api/customer/line-login', async (req, res) => {
   const { idToken, devLineUserId, devName } = req.body || {};
   try {
@@ -256,7 +275,8 @@ app.get('/api/customer/me', requireCustomer, async (req, res) => {
     const customer = await getRow('customers', req.customer.customer_id);
     if (!customer) return res.status(404).json({ error: 'Customer not found.' });
     const promotion = await activePointsPromotion();
-    const pointsBalance = await pointsBalanceFor(customer.id);
+    const { balance: pointsBalance, pointsPerFree, maxFreeValue, available: pointsAvailable, pending: pointsPending }
+      = await redemptionAvailability(customer.id, promotion);
     const { rows: recentOrders } = await pool.query(
       'SELECT date, menu_name, total_price, is_free FROM salefront WHERE customer_id = $1 ORDER BY id DESC LIMIT 10',
       [customer.id]
@@ -265,14 +285,54 @@ app.get('/api/customer/me', requireCustomer, async (req, res) => {
       'SELECT points, kind, note, created_at, claimed_at, order_no FROM point_ledger WHERE customer_id = $1 ORDER BY id DESC LIMIT 20',
       [customer.id]
     );
+    const { rows: coupons } = await pool.query(
+      'SELECT code, status, created_at, expires_at, used_at, used_order_no FROM redemptions WHERE customer_id = $1 ORDER BY id DESC LIMIT 20',
+      [customer.id]
+    );
     // Shop name comes from the same settings row the receipt header uses.
     const { rows: [shop] } = await pool.query('SELECT * FROM settings LIMIT 1');
     res.json({
-      customer, pointsBalance,
-      pointsPerFree: promotion ? Number(promotion.buy_qty) || 0 : 0,
-      maxFreeValue: promotion ? promotion.max_free_value : null,
-      pointsHistory, recentOrders, shopName: (shop && shop.shop_name) || 'KOTEA'
+      customer, pointsBalance, pointsPerFree, maxFreeValue, pointsAvailable, pointsPending,
+      pointsHistory, coupons, recentOrders, shopName: (shop && shop.shop_name) || 'KOTEA'
     });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+// Mint a self-redeem code once the customer's balance covers a free cup.
+// Single-use, 1-hour expiry — the customer shows the code/QR at the counter,
+// staff looks it up (GET /api/redemption/:code) and burns it at checkout.
+// Availability subtracts still-pending codes so a customer can't mint more
+// than their balance covers; the balance itself is only debited when the
+// code is actually burned.
+app.post('/api/customer/redeem', requireCustomer, async (req, res) => {
+  try {
+    const customer = await getRow('customers', req.customer.customer_id);
+    if (!customer) return res.status(404).json({ error: 'Customer not found.' });
+    const promotion = await activePointsPromotion();
+    if (!promotion) return res.status(400).json({ error: 'No active promotion.' });
+    const info = await redemptionAvailability(customer.id, promotion);
+    if (info.available < 1) return res.status(409).json({ error: 'Not enough points for a free cup yet.' });
+    const now = new Date();
+    const expires = new Date(now.getTime() + 60 * 60 * 1000); // +1 hr
+    // A partial unique index guards against two live codes colliding; on that
+    // (rare, 1-in-~900000) chance retry with a freshly rolled code instead of
+    // failing the customer's request outright.
+    let row;
+    for (let attempt = 0; !row && attempt < 5; attempt++) {
+      const code = String(Math.floor(100000 + Math.random() * 900000)); // 6-digit
+      try {
+        row = await insertRow('redemptions', {
+          code, customer_id: customer.id, customer_name: customer.name, promotion_id: promotion.id,
+          status: 'pending', created_at: now.toISOString(), expires_at: expires.toISOString()
+        });
+      } catch (e) {
+        if (e.code !== '23505') throw e; // not a code collision — a real failure
+      }
+    }
+    if (!row) return res.status(500).json({ error: 'Could not generate a redemption code, please try again.' });
+    res.json({ code: row.code, expires_at: row.expires_at, max_free_value: promotion.max_free_value });
   } catch (e) {
     fail(res, e);
   }
@@ -461,19 +521,37 @@ app.post('/api/points/grant', async (req, res) => {
   }
 });
 
-// Point balance for the POS register (replaces the old /api/loyalty stamps
-// lookup). Only registered customers can hold points, so this keys strictly
-// on customer_id.
+// Point balance + redeem availability for the POS register (replaces the old
+// /api/loyalty stamps lookup). Only registered customers can hold points, so
+// this keys strictly on customer_id.
 app.get('/api/points/balance', async (req, res) => {
   try {
     const promotion = await activePointsPromotion();
     const customerId = Number(req.query.customer_id);
-    const balance = Number.isInteger(customerId) ? await pointsBalanceFor(customerId) : 0;
-    res.json({
-      balance,
-      pointsPerFree: promotion ? Number(promotion.buy_qty) || 0 : 0,
-      maxFreeValue: promotion ? promotion.max_free_value : null
-    });
+    const info = await redemptionAvailability(Number.isInteger(customerId) ? customerId : null, promotion);
+    res.json(info);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+// Staff-side lookup of a self-redeem code entered at POS. Returns the pending
+// redemption + customer name + the promo's price ceiling, or 404 if it's
+// unknown, already used, or expired.
+app.get('/api/redemption/:code', async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM redemptions WHERE code = $1 AND status = 'pending' ORDER BY id DESC LIMIT 1", [req.params.code]);
+    const r = rows[0];
+    if (!r) return res.status(404).json({ error: 'Code not found or already used.' });
+    // expires_at is TIMESTAMPTZ (comes back as a Date object) — compare as
+    // timestamps, not strings, or `Date < isoString` silently never expires.
+    if (r.expires_at && new Date(r.expires_at).getTime() < Date.now()) {
+      await updateRow('redemptions', r.id, { status: 'expired' });
+      return res.status(404).json({ error: 'Code expired.' });
+    }
+    const promo = await getRow('promotions', r.promotion_id);
+    res.json({ id: r.id, code: r.code, customer_name: r.customer_name, customer_id: r.customer_id,
+      promotion_id: r.promotion_id, max_free_value: promo ? promo.max_free_value : null });
   } catch (e) {
     fail(res, e);
   }
@@ -491,9 +569,23 @@ const POINTS_LOCK_KEY = 823402;
 
 async function runCheckout(table, body, user) {
   const sales = body.sales || (body.sale ? [body.sale] : []);
-  const { requirements = [], date, client_txn_id, force = false, expense = null } = body;
+  const { requirements = [], date, client_txn_id, force = false, expense = null, redemption_id = null } = body;
   const rows = await withTransaction(async (client) => {
     if (!(await claimTxn(client_txn_id, client))) return null; // already synced
+    // A self-redeem code may only be consumed once and must still be pending.
+    // Atomic claim-with-guard (same pattern as adjustStock below): the guard
+    // rides on the UPDATE itself so two concurrent checkouts scanning the same
+    // code can't both pass a stale read and both burn it. Burning it here is
+    // just bookkeeping (which order used the code) — the actual point charge
+    // below is driven by the free cups themselves, so a cashier can equally
+    // mark a cup free by typing the customer's name with no code at all.
+    if (redemption_id) {
+      const claim = await client.query(
+        "UPDATE redemptions SET status = 'used', used_at = $2 WHERE id = $1 AND status = 'pending' RETURNING id",
+        [redemption_id, new Date().toISOString()]
+      );
+      if (!claim.rowCount) throw new Error('REDEMPTION_INVALID');
+    }
     for (const r of requirements) {
       // Atomic deduct-with-guard: the guard rides on the UPDATE itself so two
       // concurrent checkouts can't both pass a stale read and lose an update.
@@ -529,12 +621,15 @@ async function runCheckout(table, body, user) {
     }
     // Point-funded free cups: is_free='1' + non-empty promotion_id. (is_free='1'
     // with an empty promotion_id is a staff goodwill comp — no points involved.)
-    // Charge the customer's point balance inside this transaction, serialized
-    // per customer by an advisory lock — a plain SUM-then-INSERT could let two
-    // registers both pass the balance check under READ COMMITTED. `force`
-    // (offline flush) skips the balance guard like the stock guard above: the
-    // cups were already handed over, so record the spend even if it goes
-    // negative — the ledger keeps it visible.
+    // This fires whether the cashier got here via a customer-minted redeem code
+    // (burned above, for the record) or just typed the customer's name and
+    // ticked "Use free redemption" directly — both set promotion_id client-side,
+    // so the code is optional, not required. Charge the balance inside this
+    // transaction, serialized per customer by an advisory lock — a plain
+    // SUM-then-INSERT could let two registers both pass the balance check under
+    // READ COMMITTED. `force` (offline flush) skips the balance guard like the
+    // stock guard above: the cups were already handed over, so record the spend
+    // even if it goes negative — the ledger keeps it visible.
     const pointFreeCups = table === 'salefront'
       ? sales.filter(s => s.is_free === '1' && String(s.promotion_id || '').trim()).length
       : 0;
@@ -542,23 +637,24 @@ async function runCheckout(table, body, user) {
       if (resolvedCustomerId == null) throw new Error('POINTS_NO_CUSTOMER');
       const promotion = await activePointsPromotion();
       const pointsPerFree = promotion ? Number(promotion.buy_qty) || 0 : 0;
-      if (!pointsPerFree) throw new Error('POINTS_NO_PROMO');
-      const cost = pointsPerFree * pointFreeCups;
-      await client.query('SELECT pg_advisory_xact_lock($1, $2)', [POINTS_LOCK_KEY, resolvedCustomerId]);
-      if (!force) {
-        const balance = await pointsBalanceFor(resolvedCustomerId, client);
-        if (balance < cost) {
-          const err = new Error('INSUFFICIENT_POINTS');
-          err.balance = balance;
-          throw err;
+      if (pointsPerFree > 0) {
+        const cost = pointsPerFree * pointFreeCups;
+        await client.query('SELECT pg_advisory_xact_lock($1, $2)', [POINTS_LOCK_KEY, resolvedCustomerId]);
+        if (!force) {
+          const balance = await pointsBalanceFor(resolvedCustomerId, client);
+          if (balance < cost) {
+            const err = new Error('INSUFFICIENT_POINTS');
+            err.balance = balance;
+            throw err;
+          }
         }
+        await insertRow('point_ledger', {
+          customer_id: resolvedCustomerId, points: -cost, kind: 'spend', status: 'claimed',
+          note: `Free cup redemption (${pointFreeCups} cup${pointFreeCups > 1 ? 's' : ''})`,
+          created_by: user, created_at: new Date().toISOString(),
+          claimed_at: new Date().toISOString(), order_no: orderNo
+        }, client);
       }
-      await insertRow('point_ledger', {
-        customer_id: resolvedCustomerId, points: -cost, kind: 'spend', status: 'claimed',
-        note: `Free cup redemption (${pointFreeCups} cup${pointFreeCups > 1 ? 's' : ''})`,
-        created_by: user, created_at: new Date().toISOString(),
-        claimed_at: new Date().toISOString(), order_no: orderNo
-      }, client);
     }
     const out = [];
     for (const s of sales) {
@@ -570,6 +666,10 @@ async function runCheckout(table, body, user) {
     // still deducted above like any other cup) rather than silently eating
     // into margin with no trace.
     if (expense && expense.amount > 0) await insertRow('expenses', expense, client);
+    // Code was already claimed atomically above; just record which order burned it.
+    if (redemption_id) {
+      await updateRow('redemptions', redemption_id, { used_order_no: orderNo }, client);
+    }
     return out;
   });
   if (rows === null) return { duplicate: true };
@@ -582,9 +682,9 @@ app.post('/api/checkout/pos', async (req, res) => {
   try { res.json(await runCheckout('salefront', req.body, actor(req))); }
   catch (e) {
     if (e.message === 'INSUFFICIENT_STOCK') return res.status(409).json({ error: 'Insufficient stock', material: e.material });
+    if (e.message === 'REDEMPTION_INVALID') return res.status(409).json({ error: 'Redemption code already used or expired.' });
     if (e.message === 'INSUFFICIENT_POINTS') return res.status(409).json({ error: 'Customer does not have enough points.', balance: e.balance });
     if (e.message === 'POINTS_NO_CUSTOMER') return res.status(409).json({ error: 'Free (points) cups require a registered customer.' });
-    if (e.message === 'POINTS_NO_PROMO') return res.status(409).json({ error: 'No active points promotion is configured.' });
     fail(res, e);
   }
 });

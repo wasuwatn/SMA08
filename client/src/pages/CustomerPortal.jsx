@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import QRCode from 'qrcode';
 import { customerApi, setToken } from '../lib/customerApi.js';
 import { money } from '../lib/helpers.js';
 
@@ -15,6 +16,29 @@ function loadLiff() {
 }
 
 /* ---- SVG icons — hand-drawn line-art family -------------------------------- */
+// Earned stamp: line-art bubble-tea cup with pearls, drawn inside the scallop
+// seal so a collected stamp reads at a glance (empty slots stay blank).
+const CupArt = () => (
+  <svg className="cp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M6.5 8.5h11l-1.3 11a1.5 1.5 0 0 1-1.5 1.3H9.3a1.5 1.5 0 0 1-1.5-1.3l-1.3-11Z" />
+    <path d="M10 8.5 12.8 3l2.7 1" />
+    <circle cx="10" cy="16.5" r="1" fill="currentColor" stroke="none" />
+    <circle cx="14" cy="16.5" r="1" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="13.5" r="1" fill="currentColor" stroke="none" />
+  </svg>
+);
+// Zig-zag seal edge for stamp slots — 24 teeth around a 64px viewBox.
+const SCALLOP_POINTS = Array.from({ length: 48 }, (_, i) => {
+  const a = (Math.PI * i) / 24;
+  const r = i % 2 === 0 ? 29 : 25.5;
+  return `${(32 + r * Math.cos(a)).toFixed(2)},${(32 + r * Math.sin(a)).toFixed(2)}`;
+}).join(' ');
+const Scallop = ({ earned }) => (
+  <svg className="cp-scallop" viewBox="0 0 64 64" aria-hidden="true">
+    <polygon points={SCALLOP_POINTS} fill={earned ? 'rgba(61, 63, 33, 0.14)' : 'none'}
+      stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+  </svg>
+);
 const Sparkle = ({ className }) => (
   <svg className={`cp-deco ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
     <path d="M12 2.5v19M3.8 7.3l16.4 9.4M3.8 16.7l16.4-9.4" />
@@ -27,9 +51,10 @@ const GiftIcon = () => (
     <path d="M7.5 8a2.4 2.4 0 0 1 0-4.8C10 3.2 12 8 12 8s2-4.8 4.5-4.8a2.4 2.4 0 0 1 0 4.8" />
   </svg>
 );
-const StarIcon = () => (
+const TicketIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="m12 3 2.7 5.6 6.1.8-4.5 4.3 1.1 6-5.4-2.9-5.4 2.9 1.1-6L3.2 9.4l6.1-.8L12 3Z" />
+    <path d="M3 9V7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a3 3 0 0 0 0 6v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a3 3 0 0 0 0-6Z" />
+    <path d="M13 5v2m0 10v2m0-8v2" />
   </svg>
 );
 const ReceiptIcon = () => (
@@ -38,6 +63,14 @@ const ReceiptIcon = () => (
     <path d="M9 7h6M9 11h6" />
   </svg>
 );
+const StarIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="m12 3 2.7 5.6 6.1.8-4.5 4.3 1.1 6-5.4-2.9-5.4 2.9 1.1-6L3.2 9.4l6.1-.8L12 3Z" />
+  </svg>
+);
+
+const COUPON_LABEL = { pending: 'รอใช้งาน', used: 'ใช้แล้ว', expired: 'หมดอายุ' };
+const POINTS_LABEL = { link: 'รับแต้มจากร้าน', crm: 'รับแต้มจากร้าน', spend: 'แลกแก้วฟรี' };
 
 const fmtDate = (v) => {
   if (!v) return '';
@@ -70,12 +103,10 @@ function stashClaimToken() {
   } catch { /* malformed URL — nothing to claim */ }
 }
 
-const POINTS_LABEL = { link: 'รับแต้มจากร้าน', crm: 'รับแต้มจากร้าน', spend: 'แลกแก้วฟรี' };
-
 export default function CustomerPortal() {
   const [phase, setPhase] = useState('loading'); // loading | register | ready | error
   const [error, setError] = useState('');
-  const [data, setData] = useState(null);        // { customer, pointsBalance, pointsPerFree, maxFreeValue, pointsHistory, recentOrders, shopName }
+  const [data, setData] = useState(null);        // { customer, pointsBalance, pointsPerFree, maxFreeValue, pointsAvailable, pointsPending, pointsHistory, coupons, recentOrders, shopName }
   const [pendingToken, setPendingToken] = useState('');
   const [regName, setRegName] = useState('');
   const [regPhone, setRegPhone] = useState('');
@@ -83,7 +114,9 @@ export default function CustomerPortal() {
   const [regDob, setRegDob] = useState('');
   const [busy, setBusy] = useState(false);
   const [claimMsg, setClaimMsg] = useState(null); // { type: 'success'|'error', text }
-  const [tab, setTab] = useState('orders');      // orders | points
+  const [redeem, setRedeem] = useState(null);    // { code, expires_at, max_free_value }
+  const [qrUrl, setQrUrl] = useState('');
+  const [tab, setTab] = useState('orders');      // orders | coupons | points
 
   const loadMe = useCallback(async () => {
     const me = await customerApi.me();
@@ -204,6 +237,31 @@ export default function CustomerPortal() {
     })();
   }, [phase, loadMe]);
 
+  const doRedeem = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const r = await customerApi.redeem();
+      setRedeem(r);
+      setQrUrl(await QRCode.toDataURL(r.code, { width: 440, margin: 1 }));
+      await loadMe(); // refresh available/pending counts
+    } catch (e) {
+      setError(e.message || 'แลกไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const closeRedeem = () => { setRedeem(null); setQrUrl(''); };
+
+  // Close the QR modal with the Escape key (escape-routes).
+  useEffect(() => {
+    if (!redeem) return;
+    const onKey = (e) => { if (e.key === 'Escape') closeRedeem(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [redeem]);
+
   if (phase === 'loading') {
     return (
       <div className="cp-app" aria-busy="true" aria-label="กำลังโหลด">
@@ -271,9 +329,17 @@ export default function CustomerPortal() {
   }
 
   // ready
-  const { customer, pointsBalance = 0, pointsPerFree = 0, maxFreeValue, pointsHistory = [], recentOrders, shopName = 'KOTEA' } = data;
-  const freeCups = pointsPerFree > 0 ? Math.floor(pointsBalance / pointsPerFree) : 0;
-  const toNextFree = pointsPerFree > 0 ? pointsPerFree - (pointsBalance % pointsPerFree) : 0;
+  const {
+    customer, pointsBalance = 0, pointsPerFree = 0, maxFreeValue,
+    pointsAvailable = 0, pointsHistory = [], coupons = [], recentOrders, shopName = 'KOTEA'
+  } = data;
+  const buyQty = pointsPerFree || 10;
+  const inCycle = pointsPerFree > 0 ? pointsBalance % buyQty : 0;
+  const remaining = buyQty - inCycle;
+  // A pending code past its expiry is shown as expired without waiting for the
+  // server to sweep it.
+  const couponStatus = (c) =>
+    c.status === 'pending' && c.expires_at && new Date(c.expires_at).getTime() < Date.now() ? 'expired' : c.status;
 
   return (
     <div className="cp-app">
@@ -302,48 +368,65 @@ export default function CustomerPortal() {
         </div>
       )}
 
-      <section className="cp-card" aria-label={`แต้มสะสม ${pointsBalance} แต้ม`}>
-        <Sparkle className="d1" />
-        <Sparkle className="d2" />
-        <Sparkle className="d3" />
-        <div className="cp-card-script">{shopName.charAt(0).toUpperCase() + shopName.slice(1).toLowerCase()}</div>
-        <h2 className="cp-card-heading">Points Card</h2>
-        <div className="cp-card-sub">
-          {pointsPerFree > 0 ? `ครบ ${pointsPerFree} แต้ม แลกเครื่องดื่มฟรี 1 แก้ว` : 'แต้มสะสมจากร้าน'}
-          {maxFreeValue > 0 && ` (เมนูไม่เกิน ${money(maxFreeValue)})`}
-        </div>
-        <div className="cp-count" style={{ position: 'static', textAlign: 'center', margin: '18px 0 6px', fontSize: 44 }}>
-          <b>{pointsBalance}</b> <span style={{ fontSize: 18 }}>แต้ม</span>
-        </div>
-        <div className="cp-card-note">
-          {freeCups > 0
-            ? 'คุณมีสิทธิ์แลกเครื่องดื่มฟรีแล้ว — แจ้งพนักงานที่เคาน์เตอร์ได้เลย!'
-            : pointsPerFree > 0
-              ? `สะสมอีก ${toNextFree} แต้ม รับฟรี 1 แก้ว`
-              : 'รับแต้มได้จากลิงค์ที่ร้านส่งให้ทาง LINE'}
-        </div>
-        {freeCups > 0 && (
-          <div className="cp-free-pill"><GiftIcon />แลกฟรีได้ {freeCups} แก้ว</div>
-        )}
-        {error && <div className="cp-error-box" role="alert" style={{ marginTop: 12, marginBottom: 0 }}>{error}</div>}
-      </section>
+      {pointsPerFree > 0 ? (
+        <section className="cp-card" aria-label={`บัตรสะสมแต้ม ${inCycle} จาก ${buyQty} แต้ม`}>
+          <Sparkle className="d1" />
+          <Sparkle className="d2" />
+          <Sparkle className="d3" />
+          <div className="cp-count"><b>{inCycle}</b>/{buyQty}</div>
+          <div className="cp-card-script">{shopName.charAt(0).toUpperCase() + shopName.slice(1).toLowerCase()}</div>
+          <h2 className="cp-card-heading">Loyalty Card</h2>
+          <div className="cp-card-sub">
+            สะสมครบ {buyQty} แต้ม รับฟรี 1 แก้ว{maxFreeValue > 0 && ` (เมนูไม่เกิน ${money(maxFreeValue)})`}
+          </div>
+          <div className="cp-stamps">
+            {Array.from({ length: buyQty }).map((_, i) => {
+              const earned = i < inCycle;
+              const last = i === buyQty - 1;
+              return (
+                <div key={i} className={`cp-stamp${earned ? ' is-earned' : ''}`}
+                  aria-label={earned ? `แต้มที่ ${i + 1} ได้รับแล้ว` : last ? `แต้มที่ ${i + 1} ครบแล้วรับฟรี` : `แต้มที่ ${i + 1}`}>
+                  <Scallop earned={earned} />
+                  {earned ? <CupArt /> : last ? <span className="cp-free-label">FREE</span> : null}
+                </div>
+              );
+            })}
+          </div>
+          <div className="cp-card-note">
+            {pointsAvailable > 0 ? 'คุณมีสิทธิ์แลกเครื่องดื่มฟรีแล้ว!' : `สะสมอีก ${remaining} แต้ม รับฟรี 1 แก้ว`}
+          </div>
+          {pointsAvailable > 0 && (
+            <div className="cp-free-pill"><GiftIcon />แลกฟรีได้ {pointsAvailable} แก้ว</div>
+          )}
+          <button className="cp-redeem" disabled={busy || pointsAvailable < 1} onClick={doRedeem}>
+            <GiftIcon />
+            {busy ? 'กำลังสร้างคูปอง…' : pointsAvailable < 1 ? `สะสมอีก ${remaining} แต้มเพื่อแลกฟรี` : 'แลกรับแก้วฟรี'}
+          </button>
+          {error && <div className="cp-error-box" role="alert" style={{ marginTop: 12, marginBottom: 0 }}>{error}</div>}
+        </section>
+      ) : (
+        <section className="cp-panel"><div className="cp-empty">ยังไม่มีโปรโมชั่นที่เปิดใช้งาน</div></section>
+      )}
 
-      <section className="cp-stats" aria-label="สถิติแต้มสะสม">
+      <section className="cp-stats" aria-label="สถิติการสะสม">
+        <div className="cp-stat"><div className="label">สะสมรอบนี้</div><div className="value">{inCycle}/{buyQty}</div></div>
+        <div className="cp-stat"><div className="label">แลกฟรีได้</div><div className="value good">{pointsAvailable}</div></div>
         <div className="cp-stat"><div className="label">แต้มสะสม</div><div className="value">{pointsBalance}</div></div>
-        <div className="cp-stat"><div className="label">แลกฟรีได้</div><div className="value good">{freeCups} แก้ว</div></div>
-        <div className="cp-stat"><div className="label">แต้มต่อแก้วฟรี</div><div className="value">{pointsPerFree || '—'}</div></div>
       </section>
 
       <div className="cp-tabs" role="tablist" aria-label="ประวัติ">
         <button className="cp-tab" role="tab" aria-selected={tab === 'orders'} onClick={() => setTab('orders')}>
           ประวัติการสั่งซื้อ
         </button>
+        <button className="cp-tab" role="tab" aria-selected={tab === 'coupons'} onClick={() => setTab('coupons')}>
+          ประวัติคูปอง
+        </button>
         <button className="cp-tab" role="tab" aria-selected={tab === 'points'} onClick={() => setTab('points')}>
           ประวัติแต้ม
         </button>
       </div>
 
-      {tab === 'orders' ? (
+      {tab === 'orders' && (
         <section className="cp-panel" role="tabpanel" aria-label="ประวัติการสั่งซื้อ">
           {recentOrders && recentOrders.length ? recentOrders.map((o, i) => (
             <div className="cp-row" key={i}>
@@ -362,7 +445,32 @@ export default function CustomerPortal() {
             <div className="cp-empty"><ReceiptIcon /><div>ยังไม่มีประวัติการซื้อ</div></div>
           )}
         </section>
-      ) : (
+      )}
+
+      {tab === 'coupons' && (
+        <section className="cp-panel" role="tabpanel" aria-label="ประวัติคูปอง">
+          {coupons.length ? coupons.map((c, i) => {
+            const st = couponStatus(c);
+            return (
+              <div className="cp-row" key={i}>
+                <div className="cp-row-main">
+                  <div className="cp-row-title cp-code">{c.code}</div>
+                  <div className="cp-row-sub">
+                    {st === 'used' ? `ใช้เมื่อ ${fmtDateTime(c.used_at)}` : `สร้างเมื่อ ${fmtDateTime(c.created_at)}`}
+                  </div>
+                </div>
+                <div className="cp-row-end">
+                  <span className={`cp-badge ${st}`}>{COUPON_LABEL[st] || st}</span>
+                </div>
+              </div>
+            );
+          }) : (
+            <div className="cp-empty"><TicketIcon /><div>ยังไม่เคยแลกคูปอง</div></div>
+          )}
+        </section>
+      )}
+
+      {tab === 'points' && (
         <section className="cp-panel" role="tabpanel" aria-label="ประวัติแต้ม">
           {pointsHistory.length ? pointsHistory.map((p, i) => {
             const pts = Number(p.points) || 0;
@@ -388,6 +496,28 @@ export default function CustomerPortal() {
             <div className="cp-empty"><StarIcon /><div>ยังไม่มีประวัติแต้ม</div></div>
           )}
         </section>
+      )}
+
+      {redeem && (
+        <div className="cp-scrim" onClick={(e) => { if (e.target === e.currentTarget) closeRedeem(); }}>
+          <div className="cp-modal" role="dialog" aria-modal="true" aria-label="คูปองแลกแก้วฟรี">
+            <button className="cp-modal-close" onClick={closeRedeem} aria-label="ปิด">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+            <h2>คูปองแลกแก้วฟรี</h2>
+            <div className="cp-modal-sub">แสดงโค้ดนี้ให้พนักงานที่เคาน์เตอร์</div>
+            <div className="cp-qr-box">
+              {qrUrl && <img src={qrUrl} alt={`QR code สำหรับโค้ด ${redeem.code}`} />}
+            </div>
+            <div className="cp-modal-code-label">รหัสคูปอง</div>
+            <div className="cp-modal-code">{redeem.code}</div>
+            <div className="cp-modal-hint">
+              {redeem.max_free_value > 0 && <>ใช้กับเมนูราคาไม่เกิน {money(redeem.max_free_value)}<br /></>}
+              คูปองหมดอายุใน 1 ชั่วโมง
+            </div>
+            <button className="cp-modal-done" onClick={closeRedeem}>เสร็จสิ้น</button>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -51,6 +51,7 @@ export const api = {
   pointsLinkVoid: (id) => req('DELETE', `/api/points/link/${encodeURIComponent(id)}`),
   pointsGrant: (body) => req('POST', '/api/points/grant', body),
   pointsBalance: (customer_id) => req('GET', `/api/points/balance?customer_id=${encodeURIComponent(customer_id)}`),
+  redemption: (code) => req('GET', `/api/redemption/${encodeURIComponent(code)}`),
   checkoutPos: (payload) => req('POST', '/api/checkout/pos', payload),
   checkoutDelivery: (payload) => req('POST', '/api/checkout/delivery', payload),
   importDelivery: (payload) => req('POST', '/api/import/delivery', payload),

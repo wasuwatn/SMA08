@@ -45,6 +45,10 @@ export default function POS() {
   const [promoCode, setPromoCode] = useState('');
   const [appliedDiscount, setAppliedDiscount] = useState({ code: '', type: 'none', value: 0 });
 
+  // Self-redeem code (customer minted it in the rewards portal, backed by points)
+  const [redeemCode, setRedeemCode] = useState('');
+  const [redemption, setRedemption] = useState(null); // { id, customer_name, max_free_value }
+
   // Customizer modal state
   const [customizerOpen, setCustomizerOpen] = useState(false);
   const [selected, setSelected] = useState(null); // drink selected to customize
@@ -53,6 +57,7 @@ export default function POS() {
   const [sweet, setSweet] = useState(sweetnessLevels[0]);
   const [container, setContainer] = useState('Ice');
   const [addonRows, setAddonRows] = useState([]); // Selected addon names
+  const [useFreeRedemption, setUseFreeRedemption] = useState(false);
 
   // Sales History overlay state
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -84,10 +89,10 @@ export default function POS() {
   }, []);
   useEffect(() => { refreshRecentSales(); }, [refreshRecentSales]);
 
-  // Point balance for the resolved customer, looked up from the server.
-  // null = unknown (no customer, or lookup failed/offline) — the Free (points)
-  // button stays disabled until a real balance arrives.
-  const [pointsBalance, setPointsBalance] = useState(null);
+  // Points-backed loyalty status for the typed/selected customer, looked up
+  // from the server (accounts for pending self-redeem codes too, so a
+  // customer can't mint more codes than their balance covers).
+  const [loyalty, setLoyalty] = useState({ balance: 0, available: 0, pending: 0 });
 
   // Filtered drink catalog
   const shown = cat === 'All' ? drinks : drinks.filter(d => d.category === cat);
@@ -103,31 +108,30 @@ export default function POS() {
   const childPriceChange = childObj ? Number(childObj.price_change) || 0 : 0;
   const base = selected ? Number(selected.front_price) : 0;
   const singleCup = base + containerAdj + addonsPrice + childPriceChange;
-  const modalTotal = singleCup * qty;
+  const modalTotal = useFreeRedemption ? 0 : singleCup * qty;
 
   // Points promo (buy_qty = points per free cup, capped at max_free_value)
-  const pointsPromo = (data.promotions || []).find(p => p.type === 'points' && p.status === 'Active');
-  const pointsPerFree = pointsPromo ? Number(pointsPromo.buy_qty) || 0 : 0;
-  const maxFreeValue = pointsPromo ? Number(pointsPromo.max_free_value) || 0 : 0;
-  // Resolve the typed name to a customer row so sales/points key on customer_id.
-  // Only registered customers can hold points, so the balance lookup keys
-  // strictly on the resolved id.
+  const promotion = (data.promotions || []).find(p => p.type === 'points' && p.status === 'Active');
+  // Resolve the typed name to a customer row so sales/loyalty key on customer_id.
+  // POS doesn't load data.salefront at all (see skipHeavyTables in data.jsx),
+  // so loyalty is looked up from the server instead of computed locally.
   const custObj = useMemo(() => {
     const q = customer.trim().toLowerCase();
     return q ? data.customers.find(x => x.name && x.name.trim().toLowerCase() === q) : null;
   }, [customer, data.customers]);
   useEffect(() => {
-    if (!custObj) { setPointsBalance(null); return; }
-    setPointsBalance(null); // stale balance from the previous customer must not enable the button
+    if (!promotion) { setLoyalty({ balance: 0, available: 0, pending: 0 }); return; }
+    if (!custObj) { setLoyalty({ balance: 0, available: 0, pending: 0 }); return; }
     // Small debounce so typing a fresh name doesn't fire a request per keystroke.
     const t = setTimeout(() => {
-      api.pointsBalance(custObj.id).then(r => setPointsBalance(Number(r.balance))).catch(() => setPointsBalance(null));
+      api.pointsBalance(custObj.id).then(setLoyalty).catch(() => {});
     }, 250);
     return () => clearTimeout(t);
-  }, [custObj]);
-  // Points already committed to free cups sitting in the cart.
-  const pointsUsedInCart = cart.reduce((s, item) => s + (item.freeKind === 'points' ? pointsPerFree * item.qty : 0), 0);
-  const pointsLeft = pointsBalance == null ? null : pointsBalance - pointsUsedInCart;
+  }, [custObj, promotion]);
+  const freeUsedInCart = cart.reduce((s, item) => s + (item.isFree ? item.qty : 0), 0);
+  const freeRemaining = Math.max(0, loyalty.available - freeUsedInCart);
+  const eligibleForFree = selected && promotion ? Number(selected.front_price) <= Number(promotion.max_free_value) : false;
+  const canRedeemFree = !!promotion && freeRemaining > 0 && eligibleForFree;
 
   // Cart calculation aggregates
   const cartSubtotal = useMemo(() => {
@@ -227,6 +231,25 @@ export default function POS() {
     if (c) setAddress(c.address || '');
   };
 
+  // Validate a self-redeem code: pulls up the customer and auto-fills their
+  // name so the cashier doesn't have to type it. Entirely optional — the
+  // "Use free redemption" toggle already works from a typed customer name
+  // alone (see canRedeemFree below), so staff can mark a cup free directly
+  // without the customer ever generating a code.
+  const applyRedeemCode = async () => {
+    const code = redeemCode.trim();
+    if (!code) return;
+    try {
+      const r = await api.redemption(code);
+      setRedemption(r);
+      onCustomerChange(r.customer_name);
+      pushToast(`Redeem code valid for ${r.customer_name}. Mark their free cup below.`, 'success');
+    } catch (e) {
+      setRedemption(null);
+      pushToast(e.status === 404 ? 'Code not found, used, or expired.' : 'Could not validate code.', 'warning');
+    }
+  };
+
   // Open customizer modal on catalog card click
   const handleOpenCustomizer = (d) => {
     setSelected(d);
@@ -236,6 +259,7 @@ export default function POS() {
     setContainer('Ice');
     setAddonRows([]);
     setQty(1);
+    setUseFreeRedemption(false);
     setCustomizerOpen(true);
   };
 
@@ -252,27 +276,31 @@ export default function POS() {
     }
   };
 
-  // Add configured drink from modal to Cart. Every cup enters as a paid line —
-  // free-marking happens on the cart line itself (Free points / Free comp).
+  // Add configured drink from modal to Cart
   const handleAddCustomizedToCart = () => {
     const chosenAddons = [...addonRows].filter(Boolean).sort();
+    const isFree = canRedeemFree && useFreeRedemption;
+    const effectiveQty = isFree ? 1 : qty;
+    const effectiveSingleCup = isFree ? 0 : singleCup;
 
     setCart(prev => {
-      const existingIdx = prev.findIndex(item =>
+      // Free redemptions are never merged into an existing line — each is its
+      // own 1-cup line so the per-customer credit count stays exact.
+      const existingIdx = !isFree ? prev.findIndex(item =>
         !item.isFree &&
         item.drink.id === selected.id &&
         item.childId === childId &&
         item.sweet === sweet &&
         item.container === container &&
         JSON.stringify(item.addonRows) === JSON.stringify(chosenAddons)
-      );
+      ) : -1;
 
       if (existingIdx > -1) {
         const next = [...prev];
         next[existingIdx] = {
           ...next[existingIdx],
-          qty: next[existingIdx].qty + qty,
-          totalPrice: next[existingIdx].singleCup * (next[existingIdx].qty + qty)
+          qty: next[existingIdx].qty + effectiveQty,
+          totalPrice: next[existingIdx].singleCup * (next[existingIdx].qty + effectiveQty)
         };
         return next;
       } else {
@@ -285,62 +313,19 @@ export default function POS() {
           container,
           addonRows: chosenAddons,
           addonsPrice,
-          singleCup,
-          qty,
-          totalPrice: singleCup * qty,
-          isFree: false,
-          freeKind: null,
-          promotionId: null
+          singleCup: effectiveSingleCup,
+          qty: effectiveQty,
+          totalPrice: effectiveSingleCup * effectiveQty,
+          isFree,
+          promotionId: isFree ? promotion.id : null
         }];
       }
     });
 
     setCustomizerOpen(false);
     setSelected(null);
-    pushToast('Added to order.', 'success');
-  };
-
-  // Mark one cup of a cart line as free. Splits a single cup off into its own
-  // 1-qty ฿0 line (free lines are never merged, so the cup count stays exact).
-  // kind 'points' charges the customer's balance at checkout (promotion_id set);
-  // kind 'goodwill' is a staff comp — no points involved (promotion_id empty).
-  const markCupFree = (id, kind) => {
-    setCart(prev => {
-      const idx = prev.findIndex(item => item.id === id);
-      if (idx < 0) return prev;
-      const item = prev[idx];
-      const freeLine = {
-        ...item,
-        id: Math.random().toString(36).substring(2, 11),
-        qty: 1,
-        singleCup: 0,
-        totalPrice: 0,
-        paidSingleCup: item.singleCup, // kept so Undo can restore the price
-        isFree: true,
-        freeKind: kind,
-        promotionId: kind === 'points' ? pointsPromo.id : null
-      };
-      const next = [...prev];
-      if (item.qty > 1) {
-        next[idx] = { ...item, qty: item.qty - 1, totalPrice: item.singleCup * (item.qty - 1) };
-        next.splice(idx + 1, 0, freeLine);
-      } else {
-        next[idx] = freeLine;
-      }
-      return next;
-    });
-  };
-
-  // Undo a free mark: the cup becomes a normal paid line again.
-  const undoFreeCup = (id) => {
-    setCart(prev => prev.map(item => {
-      if (item.id !== id) return item;
-      const price = item.paidSingleCup ?? 0;
-      return {
-        ...item, singleCup: price, totalPrice: price * item.qty,
-        isFree: false, freeKind: null, promotionId: null, paidSingleCup: undefined
-      };
-    }));
+    setUseFreeRedemption(false);
+    pushToast(isFree ? 'Free cup added to order.' : 'Added to order.', 'success');
   };
 
   // Edit/Modify item quantity directly in the Cart list
@@ -442,17 +427,6 @@ export default function POS() {
     if (payMethod === 'Cash' && cashReceived !== '' && changeDue < 0) {
       return pushToast('Cash received is less than the total.', 'warning');
     }
-    // Point-funded free cups need the server to charge the balance — that
-    // can't ride the offline queue safely, so require a connection (goodwill
-    // comps queue fine).
-    if (cart.some(i => i.freeKind === 'points')) {
-      if (!navigator.onLine) {
-        return pushToast('Free (points) cups need a connection — use Free (comp) or reconnect first.', 'warning');
-      }
-      if (!custObj) {
-        return pushToast('Free (points) cups require a registered customer.', 'warning');
-      }
-    }
 
     // Aggregate requirements for material stock checking
     const itemsList = cart.map(item => ({
@@ -526,6 +500,9 @@ export default function POS() {
 
     const cupCount = salesRows.length;
     const buyer = customer.trim() || 'Walk-in';
+    // Only burn the self-redeem code if a free cup is actually in this order,
+    // so a mis-scan doesn't waste the customer's earned credit.
+    const redemptionId = (redemption && freeItems.length) ? redemption.id : null;
 
     // Snapshot the order for the printable receipt before the register clears.
     // The order number arrives with the server response and is patched in.
@@ -552,12 +529,14 @@ export default function POS() {
     setDeliveryPlatform('');
     setPromoCode('');
     setAppliedDiscount({ code: '', type: 'none', value: 0 });
+    setRedeemCode('');
+    setRedemption(null);
     setPayMethod('Cash');
     setCashReceived('');
     setQrOpen(false);
     pushToast(`Sale completed — ${cupCount} cup row(s) recorded.`, 'success');
 
-    checkoutPos({ sales: salesRows, requirements: reqArr, date, expense })
+    checkoutPos({ sales: salesRows, requirements: reqArr, date, expense, redemption_id: redemptionId })
       .then(res => {
         if (res?.queued) pushToast(`Offline — ${cupCount} cup(s) for ${buyer} queued, will sync when online.`, 'info');
         if (Array.isArray(res) && res[0]?.order_no) {
@@ -731,16 +710,37 @@ export default function POS() {
                   </div>
                 )}
 
-                {pointsPromo && custObj && pointsBalance != null && (
+                {promotion && customer.trim() && customer.trim() !== 'Walk-in' && (
                   <div className="sage-pos-address-row" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    ⭐ {pointsLeft} point{pointsLeft === 1 ? '' : 's'}
-                    {pointsUsedInCart > 0 && ` (${pointsUsedInCart} in cart)`}
-                    {pointsPerFree > 0 && (
-                      pointsLeft >= pointsPerFree
-                        ? <strong style={{ color: 'var(--success-color)', marginLeft: 6 }}>
-                            🎁 free cup = {pointsPerFree} pts
-                          </strong>
-                        : <span style={{ marginLeft: 6 }}>— free cup = {pointsPerFree} pts</span>
+                    🎫 Stamps: {loyalty.balance % Number(promotion.buy_qty)}/{promotion.buy_qty}
+                    {freeRemaining > 0 && (
+                      <strong style={{ color: 'var(--success-color)', marginLeft: 6 }}>
+                        🎁 {freeRemaining} free cup{freeRemaining > 1 ? 's' : ''} available
+                      </strong>
+                    )}
+                  </div>
+                )}
+
+                {promotion && (
+                  <div className="sage-pos-address-row">
+                    <span className="sage-pos-field-label">Redeem code (LINE)</span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input
+                        className="sage-pos-input"
+                        value={redeemCode}
+                        onChange={(e) => setRedeemCode(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') applyRedeemCode(); }}
+                        placeholder="6-digit code"
+                        inputMode="numeric"
+                      />
+                      <button type="button" className="sage-pos-promo-btn" onClick={applyRedeemCode} disabled={!redeemCode.trim()}>
+                        Apply
+                      </button>
+                    </div>
+                    {redemption && (
+                      <span className="helper-text" style={{ color: 'var(--success-color)' }}>
+                        ✓ Code for {redemption.customer_name} — mark their free cup, then charge.
+                      </span>
                     )}
                   </div>
                 )}
@@ -754,25 +754,13 @@ export default function POS() {
                     Nothing here yet. Add an item from the menu.
                   </div>
                 ) : (
-                  cart.map(item => {
-                    // A cup can be point-funded only when a registered customer is
-                    // set, their (known) balance still covers one more free cup, and
-                    // the cup's price fits under the promo ceiling.
-                    const unitPrice = item.isFree ? (item.paidSingleCup ?? 0) : item.singleCup;
-                    const canPointsFree = !item.isFree && !!pointsPromo && pointsPerFree > 0 &&
-                      !!custObj && pointsLeft != null && pointsLeft >= pointsPerFree &&
-                      (maxFreeValue <= 0 || unitPrice <= maxFreeValue);
-                    return (
+                  cart.map(item => (
                     <div key={item.id} className="sage-pos-cart-line">
                       <div className="sage-pos-cart-item-details">
                         <div className="sage-pos-cart-item-name">
                           {item.drink.name}
                           {item.childObj && <span style={{ color: 'var(--text-muted)' }}> · {item.childObj.name}</span>}
-                          {item.isFree && (
-                            <span className="badge local" style={{ marginLeft: 6 }}>
-                              🎁 FREE {item.freeKind === 'points' ? `(-${pointsPerFree} pts)` : '(comp)'}
-                            </span>
-                          )}
+                          {item.isFree && <span className="badge local" style={{ marginLeft: 6 }}>🎁 FREE</span>}
                         </div>
                         <div className="sage-pos-cart-item-meta">
                           {item.container} / Sugar {item.sweet}
@@ -783,32 +771,6 @@ export default function POS() {
                           <span className="sage-pos-qty-val">{item.qty}</span>
                           <button className="sage-pos-qty-btn" disabled={item.isFree} onClick={() => updateCartItemQty(item.id, true)}>+</button>
                         </div>
-                        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                          {item.isFree ? (
-                            <button type="button" className="sage-pos-cart-item-remove" onClick={() => undoFreeCup(item.id)}>
-                              Undo free
-                            </button>
-                          ) : (
-                            <>
-                              <button
-                                type="button" className="sage-pos-cart-item-remove"
-                                disabled={!canPointsFree}
-                                title={
-                                  !custObj ? 'Select a registered customer first' :
-                                  pointsLeft == null ? 'Point balance unavailable (offline?)' :
-                                  pointsLeft < pointsPerFree ? 'Not enough points' :
-                                  (maxFreeValue > 0 && unitPrice > maxFreeValue) ? `Free cups are limited to items ≤ ${money(maxFreeValue)}` : ''
-                                }
-                                onClick={() => markCupFree(item.id, 'points')}
-                              >
-                                ⭐ Free (points)
-                              </button>
-                              <button type="button" className="sage-pos-cart-item-remove" onClick={() => markCupFree(item.id, 'goodwill')}>
-                                🎁 Free (comp)
-                              </button>
-                            </>
-                          )}
-                        </div>
                       </div>
 
                       <div className="sage-pos-cart-item-pricing">
@@ -816,8 +778,7 @@ export default function POS() {
                         <button className="sage-pos-cart-item-remove" onClick={() => removeCartItem(item.id)}>Remove</button>
                       </div>
                     </div>
-                    );
-                  })
+                  ))
                 )}
               </div>
 
@@ -919,6 +880,8 @@ export default function POS() {
           container={container} setContainer={setContainer} containers={CONTAINERS}
           sweetnessLevels={sweetnessLevels} sweet={sweet} setSweet={setSweet}
           addons={data.addons} addonRows={addonRows} toggleAddon={toggleAddon}
+          promotion={promotion} useFreeRedemption={useFreeRedemption} setUseFreeRedemption={setUseFreeRedemption}
+          canRedeemFree={canRedeemFree} freeRemaining={freeRemaining} eligibleForFree={eligibleForFree}
           qty={qty} setQty={setQty} modalTotal={modalTotal}
           onClose={() => setCustomizerOpen(false)} onConfirm={handleAddCustomizedToCart}
         />

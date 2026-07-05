@@ -518,14 +518,6 @@ async function migrate() {
     try { await pool.query(sql); } catch { /* ignore (constraint already exists, etc.) */ }
   }
 
-  // Phase-5: the self-redeem code flow was replaced by shop-issued point
-  // links (point_ledger). The redemptions table is kept as history, but any
-  // still-pending codes can never be used again — mark them expired so the
-  // history reads correctly.
-  try {
-    await pool.query("UPDATE redemptions SET status = 'expired' WHERE status = 'pending'");
-  } catch { /* ignore */ }
-
   // Phase-4: Supabase flags any table without RLS as "Unrestricted" in its
   // dashboard. That only matters for Supabase's own REST/GraphQL API
   // (PostgREST) — this hub never uses it (it talks to Postgres directly via
