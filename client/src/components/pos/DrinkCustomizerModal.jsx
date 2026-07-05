@@ -2,13 +2,15 @@ import React from 'react';
 import { money } from '../../lib/helpers.js';
 
 // Cart-line configurator opened from a menu card: variant, container,
-// sweetness, add-ons, and (if the customer has one) a free-cup redemption.
+// sweetness, add-ons, and either a points-backed free-cup redemption or a
+// no-strings staff comp.
 export default function DrinkCustomizerModal({
   selected, childItems, childId, setChildId,
   container, setContainer, containers,
   sweetnessLevels, sweet, setSweet,
   addons, addonRows, toggleAddon,
   promotion, useFreeRedemption, setUseFreeRedemption, canRedeemFree, freeRemaining, eligibleForFree,
+  useComp, setUseComp,
   qty, setQty, modalTotal,
   onClose, onConfirm
 }) {
@@ -111,8 +113,9 @@ export default function DrinkCustomizerModal({
               <button
                 type="button"
                 className={`sage-pos-modal-pill-btn ${useFreeRedemption ? 'active' : ''}`}
-                disabled={!canRedeemFree}
+                disabled={!canRedeemFree || useComp}
                 title={
+                  useComp ? 'Already marked as a staff comp' :
                   !eligibleForFree ? `Free redemption is limited to items ≤ ${money(promotion.max_free_value)}` :
                   freeRemaining <= 0 ? 'No free cups available for this customer' : ''
                 }
@@ -128,13 +131,33 @@ export default function DrinkCustomizerModal({
           </>
         )}
 
+        {/* Staff comp — always available, no customer or points required.
+            Revenue excludes it, but stock still deducts and its ingredient
+            cost still books as an expense (see checkout in POS.jsx). */}
+        <h4 className="sage-pos-modal-section-title">Free menu</h4>
+        <div className="sage-pos-modal-pills">
+          <button
+            type="button"
+            className={`sage-pos-modal-pill-btn ${useComp ? 'active' : ''}`}
+            disabled={useFreeRedemption}
+            title={useFreeRedemption ? 'Already using a points redemption' : ''}
+            onClick={() => setUseComp(v => {
+              const next = !v;
+              if (next) setQty(1);
+              return next;
+            })}
+          >
+            🎁 Mark as free
+          </button>
+        </div>
+
         {/* Quantity */}
         <div className="sage-pos-modal-qty-row">
           <span className="sage-pos-field-label" style={{ margin: 0, fontSize: '11px' }}>Quantity</span>
           <div className="sage-pos-modal-qty-controls">
-            <button className="sage-pos-modal-qty-btn" disabled={useFreeRedemption} onClick={() => setQty(q => Math.max(1, q - 1))}>−</button>
+            <button className="sage-pos-modal-qty-btn" disabled={useFreeRedemption || useComp} onClick={() => setQty(q => Math.max(1, q - 1))}>−</button>
             <span className="sage-pos-modal-qty-val">{qty}</span>
-            <button className="sage-pos-modal-qty-btn" disabled={useFreeRedemption} onClick={() => setQty(q => q + 1)}>+</button>
+            <button className="sage-pos-modal-qty-btn" disabled={useFreeRedemption || useComp} onClick={() => setQty(q => q + 1)}>+</button>
           </div>
         </div>
 

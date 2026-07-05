@@ -58,6 +58,7 @@ export default function POS() {
   const [container, setContainer] = useState('Ice');
   const [addonRows, setAddonRows] = useState([]); // Selected addon names
   const [useFreeRedemption, setUseFreeRedemption] = useState(false);
+  const [useComp, setUseComp] = useState(false); // staff comp — no points/customer needed
 
   // Sales History overlay state
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -108,7 +109,7 @@ export default function POS() {
   const childPriceChange = childObj ? Number(childObj.price_change) || 0 : 0;
   const base = selected ? Number(selected.front_price) : 0;
   const singleCup = base + containerAdj + addonsPrice + childPriceChange;
-  const modalTotal = useFreeRedemption ? 0 : singleCup * qty;
+  const modalTotal = (useFreeRedemption || useComp) ? 0 : singleCup * qty;
 
   // Points promo (buy_qty = points per free cup, capped at max_free_value)
   const promotion = (data.promotions || []).find(p => p.type === 'points' && p.status === 'Active');
@@ -260,6 +261,7 @@ export default function POS() {
     setAddonRows([]);
     setQty(1);
     setUseFreeRedemption(false);
+    setUseComp(false);
     setCustomizerOpen(true);
   };
 
@@ -279,13 +281,14 @@ export default function POS() {
   // Add configured drink from modal to Cart
   const handleAddCustomizedToCart = () => {
     const chosenAddons = [...addonRows].filter(Boolean).sort();
-    const isFree = canRedeemFree && useFreeRedemption;
+    const isFreeRedeem = canRedeemFree && useFreeRedemption;
+    const isFree = isFreeRedeem || useComp;
     const effectiveQty = isFree ? 1 : qty;
     const effectiveSingleCup = isFree ? 0 : singleCup;
 
     setCart(prev => {
-      // Free redemptions are never merged into an existing line — each is its
-      // own 1-cup line so the per-customer credit count stays exact.
+      // Free cups are never merged into an existing line — each is its own
+      // 1-cup line so the per-customer credit count (and comp count) stays exact.
       const existingIdx = !isFree ? prev.findIndex(item =>
         !item.isFree &&
         item.drink.id === selected.id &&
@@ -317,7 +320,7 @@ export default function POS() {
           qty: effectiveQty,
           totalPrice: effectiveSingleCup * effectiveQty,
           isFree,
-          promotionId: isFree ? promotion.id : null
+          promotionId: isFreeRedeem ? promotion.id : null
         }];
       }
     });
@@ -325,6 +328,7 @@ export default function POS() {
     setCustomizerOpen(false);
     setSelected(null);
     setUseFreeRedemption(false);
+    setUseComp(false);
     pushToast(isFree ? 'Free cup added to order.' : 'Added to order.', 'success');
   };
 
@@ -500,9 +504,10 @@ export default function POS() {
 
     const cupCount = salesRows.length;
     const buyer = customer.trim() || 'Walk-in';
-    // Only burn the self-redeem code if a free cup is actually in this order,
-    // so a mis-scan doesn't waste the customer's earned credit.
-    const redemptionId = (redemption && freeItems.length) ? redemption.id : null;
+    // Only burn the self-redeem code if a points-funded free cup is actually
+    // in this order (not just a staff comp), so a mis-scan or an unrelated
+    // comp in the same order doesn't waste the customer's earned credit.
+    const redemptionId = (redemption && freeItems.some(i => i.promotionId)) ? redemption.id : null;
 
     // Snapshot the order for the printable receipt before the register clears.
     // The order number arrives with the server response and is patched in.
@@ -760,7 +765,11 @@ export default function POS() {
                         <div className="sage-pos-cart-item-name">
                           {item.drink.name}
                           {item.childObj && <span style={{ color: 'var(--text-muted)' }}> · {item.childObj.name}</span>}
-                          {item.isFree && <span className="badge local" style={{ marginLeft: 6 }}>🎁 FREE</span>}
+                          {item.isFree && (
+                            <span className="badge local" style={{ marginLeft: 6 }}>
+                              🎁 FREE{item.promotionId ? '' : ' (comp)'}
+                            </span>
+                          )}
                         </div>
                         <div className="sage-pos-cart-item-meta">
                           {item.container} / Sugar {item.sweet}
@@ -882,6 +891,7 @@ export default function POS() {
           addons={data.addons} addonRows={addonRows} toggleAddon={toggleAddon}
           promotion={promotion} useFreeRedemption={useFreeRedemption} setUseFreeRedemption={setUseFreeRedemption}
           canRedeemFree={canRedeemFree} freeRemaining={freeRemaining} eligibleForFree={eligibleForFree}
+          useComp={useComp} setUseComp={setUseComp}
           qty={qty} setQty={setQty} modalTotal={modalTotal}
           onClose={() => setCustomizerOpen(false)} onConfirm={handleAddCustomizedToCart}
         />
