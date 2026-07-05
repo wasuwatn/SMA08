@@ -3,16 +3,12 @@ import { useData } from '../lib/data.jsx';
 import { money } from '../lib/helpers.js';
 import Modal from '../components/Modal.jsx';
 
-// `points` (shop-issued points; buy_qty = points per free cup) is the live
-// loyalty type. `stamp` is legacy — kept selectable so old rows still render,
-// but the server only reads the active points promo. More types (percent
-// discount, buy-X-get-Y, menu special) can be added later without a schema
-// change (see promotions.config in server/db.js).
-const PROMO_TYPES = [
-  { value: 'points', label: 'Points (N points = 1 free cup)' },
-  { value: 'stamp', label: 'Stamp card (legacy)' }
-];
-const blank = { name: '', type: 'points', status: 'Active', buy_qty: 10, free_qty: 1, max_free_value: 70 };
+// Points (shop-issued points; buy_qty = points per free cup) is the only
+// loyalty type. The old automatic stamp-card type is gone — every promotion
+// row is a points promotion. More types (percent discount, buy-X-get-Y, menu
+// special) can be added later without a schema change (see promotions.config
+// in server/db.js).
+const blank = { name: '', type: 'points', status: 'Active', buy_qty: 10, max_free_value: 70 };
 
 export default function Promotions() {
   const { data, insert, update, remove, pushToast } = useData();
@@ -23,10 +19,10 @@ export default function Promotions() {
     if (!editing.name.trim()) return pushToast('Promotion name is required.', 'warning');
     const payload = {
       name: editing.name.trim(),
-      type: editing.type || 'points',
+      type: 'points',
       status: editing.status || 'Active',
       buy_qty: Number(editing.buy_qty) || 1,
-      free_qty: Number(editing.free_qty) || 1,
+      free_qty: 1,
       max_free_value: Number(editing.max_free_value) || 0
     };
     if (editing.id) { await update('promotions', editing.id, payload); pushToast('Promotion updated.', 'success'); }
@@ -52,15 +48,13 @@ export default function Promotions() {
       <div className="table-wrap">
         <table className="data">
           <thead><tr>
-            <th>Name</th><th>Type</th><th>Buy</th><th>Free</th><th>Max free value</th><th>Status</th><th></th>
+            <th>Name</th><th>Points per free cup</th><th>Max free value</th><th>Status</th><th></th>
           </tr></thead>
           <tbody>
             {list.length ? list.map(p => (
               <tr key={p.id}>
                 <td><strong>{p.name}</strong></td>
-                <td><span className="helper-text">{PROMO_TYPES.find(t => t.value === p.type)?.label || p.type}</span></td>
                 <td>{p.buy_qty}</td>
-                <td>{p.free_qty}</td>
                 <td>{money(p.max_free_value)}</td>
                 <td>
                   <button className={`badge ${p.status === 'Active' ? 'local' : ''}`} onClick={() => toggleStatus(p)}>
@@ -72,7 +66,7 @@ export default function Promotions() {
                   <button className="btn btn-sm btn-danger" style={{ marginLeft: 4 }} onClick={() => del(p.id)}><i className="fa-solid fa-trash-can"></i></button>
                 </td>
               </tr>
-            )) : <tr className="empty-row"><td colSpan={7}>No promotions yet.</td></tr>}
+            )) : <tr className="empty-row"><td colSpan={5}>No promotions yet.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -83,19 +77,9 @@ export default function Promotions() {
           <div className="field"><label>Name</label>
             <input className="form-control" value={editing.name} autoFocus onChange={(e) => setEditing(p => ({ ...p, name: e.target.value }))} />
           </div>
-          <div className="field"><label>Type</label>
-            <select className="form-control" value={editing.type} onChange={(e) => setEditing(p => ({ ...p, type: e.target.value }))}>
-              {PROMO_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-            </select>
-          </div>
-          <div className="field"><label>{editing.type === 'points' ? 'Points per free cup' : 'Buy quantity (cups)'}</label>
+          <div className="field"><label>Points per free cup</label>
             <input type="number" min="1" className="form-control" value={editing.buy_qty} onChange={(e) => setEditing(p => ({ ...p, buy_qty: e.target.value }))} />
           </div>
-          {editing.type !== 'points' && (
-            <div className="field"><label>Free quantity (cups)</label>
-              <input type="number" min="1" className="form-control" value={editing.free_qty} onChange={(e) => setEditing(p => ({ ...p, free_qty: e.target.value }))} />
-            </div>
-          )}
           <div className="field"><label>Max free cup value (฿)</label>
             <input type="number" min="0" className="form-control" value={editing.max_free_value} onChange={(e) => setEditing(p => ({ ...p, max_free_value: e.target.value }))} />
           </div>

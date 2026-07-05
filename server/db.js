@@ -518,6 +518,16 @@ async function migrate() {
     try { await pool.query(sql); } catch { /* ignore (constraint already exists, etc.) */ }
   }
 
+  // Phase-5: the legacy automatic stamp-card promotion type is gone — the
+  // Promotions UI no longer offers it, and the server only ever reads
+  // type='points'. Any shop whose database predates this rework may still
+  // have an old type='stamp' row; convert it in place (buy_qty/max_free_value
+  // mean the same thing for both types) so it becomes the active points promo
+  // without the owner having to recreate it by hand.
+  try {
+    await pool.query("UPDATE promotions SET type = 'points' WHERE type = 'stamp'");
+  } catch { /* ignore */ }
+
   // Phase-4: Supabase flags any table without RLS as "Unrestricted" in its
   // dashboard. That only matters for Supabase's own REST/GraphQL API
   // (PostgREST) — this hub never uses it (it talks to Postgres directly via
