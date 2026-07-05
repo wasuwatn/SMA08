@@ -2,13 +2,13 @@ import React from 'react';
 import { money } from '../../lib/helpers.js';
 
 // Cart-line configurator opened from a menu card: variant, container,
-// sweetness, add-ons, and (if the customer has one) a free-cup redemption.
+// sweetness, add-ons and quantity. Free-cup marking happens later, on the
+// cart line itself (see markCupFree in POS.jsx).
 export default function DrinkCustomizerModal({
   selected, childItems, childId, setChildId,
   container, setContainer, containers,
   sweetnessLevels, sweet, setSweet,
   addons, addonRows, toggleAddon,
-  promotion, useFreeRedemption, setUseFreeRedemption, canRedeemFree, freeRemaining, eligibleForFree,
   qty, setQty, modalTotal,
   onClose, onConfirm
 }) {
@@ -103,38 +103,13 @@ export default function DrinkCustomizerModal({
           </>
         )}
 
-        {/* Promotion redemption */}
-        {promotion && (
-          <>
-            <h4 className="sage-pos-modal-section-title">Promotion</h4>
-            <div className="sage-pos-modal-pills">
-              <button
-                type="button"
-                className={`sage-pos-modal-pill-btn ${useFreeRedemption ? 'active' : ''}`}
-                disabled={!canRedeemFree}
-                title={
-                  !eligibleForFree ? `Free redemption is limited to items ≤ ${money(promotion.max_free_value)}` :
-                  freeRemaining <= 0 ? 'No free cups available for this customer' : ''
-                }
-                onClick={() => setUseFreeRedemption(v => {
-                  const next = !v;
-                  if (next) setQty(1);
-                  return next;
-                })}
-              >
-                🎁 Use free redemption{canRedeemFree ? ` (${freeRemaining} left)` : ''}
-              </button>
-            </div>
-          </>
-        )}
-
         {/* Quantity */}
         <div className="sage-pos-modal-qty-row">
           <span className="sage-pos-field-label" style={{ margin: 0, fontSize: '11px' }}>Quantity</span>
           <div className="sage-pos-modal-qty-controls">
-            <button className="sage-pos-modal-qty-btn" disabled={useFreeRedemption} onClick={() => setQty(q => Math.max(1, q - 1))}>−</button>
+            <button className="sage-pos-modal-qty-btn" onClick={() => setQty(q => Math.max(1, q - 1))}>−</button>
             <span className="sage-pos-modal-qty-val">{qty}</span>
-            <button className="sage-pos-modal-qty-btn" disabled={useFreeRedemption} onClick={() => setQty(q => q + 1)}>+</button>
+            <button className="sage-pos-modal-qty-btn" onClick={() => setQty(q => q + 1)}>+</button>
           </div>
         </div>
 

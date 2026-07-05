@@ -3,12 +3,16 @@ import { useData } from '../lib/data.jsx';
 import { money } from '../lib/helpers.js';
 import Modal from '../components/Modal.jsx';
 
-// Only `stamp` (buy N cups, get M free) is implemented today — the type
-// dropdown is fixed but kept as a real field so more types (percent
-// discount, buy-X-get-Y, menu special) can be added later without a
-// schema change (see promotions.config in server/db.js).
-const PROMO_TYPES = [{ value: 'stamp', label: 'Stamp card (buy N, get M free)' }];
-const blank = { name: '', type: 'stamp', status: 'Active', buy_qty: 10, free_qty: 1, max_free_value: 70 };
+// `points` (shop-issued points; buy_qty = points per free cup) is the live
+// loyalty type. `stamp` is legacy — kept selectable so old rows still render,
+// but the server only reads the active points promo. More types (percent
+// discount, buy-X-get-Y, menu special) can be added later without a schema
+// change (see promotions.config in server/db.js).
+const PROMO_TYPES = [
+  { value: 'points', label: 'Points (N points = 1 free cup)' },
+  { value: 'stamp', label: 'Stamp card (legacy)' }
+];
+const blank = { name: '', type: 'points', status: 'Active', buy_qty: 10, free_qty: 1, max_free_value: 70 };
 
 export default function Promotions() {
   const { data, insert, update, remove, pushToast } = useData();
@@ -19,7 +23,7 @@ export default function Promotions() {
     if (!editing.name.trim()) return pushToast('Promotion name is required.', 'warning');
     const payload = {
       name: editing.name.trim(),
-      type: editing.type || 'stamp',
+      type: editing.type || 'points',
       status: editing.status || 'Active',
       buy_qty: Number(editing.buy_qty) || 1,
       free_qty: Number(editing.free_qty) || 1,
@@ -84,12 +88,14 @@ export default function Promotions() {
               {PROMO_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </div>
-          <div className="field"><label>Buy quantity (cups)</label>
+          <div className="field"><label>{editing.type === 'points' ? 'Points per free cup' : 'Buy quantity (cups)'}</label>
             <input type="number" min="1" className="form-control" value={editing.buy_qty} onChange={(e) => setEditing(p => ({ ...p, buy_qty: e.target.value }))} />
           </div>
-          <div className="field"><label>Free quantity (cups)</label>
-            <input type="number" min="1" className="form-control" value={editing.free_qty} onChange={(e) => setEditing(p => ({ ...p, free_qty: e.target.value }))} />
-          </div>
+          {editing.type !== 'points' && (
+            <div className="field"><label>Free quantity (cups)</label>
+              <input type="number" min="1" className="form-control" value={editing.free_qty} onChange={(e) => setEditing(p => ({ ...p, free_qty: e.target.value }))} />
+            </div>
+          )}
           <div className="field"><label>Max free cup value (฿)</label>
             <input type="number" min="0" className="form-control" value={editing.max_free_value} onChange={(e) => setEditing(p => ({ ...p, max_free_value: e.target.value }))} />
           </div>

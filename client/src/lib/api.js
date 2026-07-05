@@ -39,11 +39,18 @@ export const api = {
     const qs = params && Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '';
     return req('GET', `/api/${table}${qs}`);
   },
-  loyalty: (params) => req('GET', `/api/loyalty?${new URLSearchParams(params).toString()}`),
   insert: (table, data) => req('POST', `/api/${table}`, data),
   update: (table, id, data) => req('PUT', `/api/${table}/${encodeURIComponent(id)}`, data),
   remove: (table, id) => req('DELETE', `/api/${table}/${encodeURIComponent(id)}`),
-  redemption: (code) => req('GET', `/api/redemption/${encodeURIComponent(code)}`),
+  // Shop-issued point links & grants (Points page, CRM, POS balance lookup).
+  pointsLink: (body) => req('POST', '/api/points/link', body),
+  pointsLinks: (params) => {
+    const qs = params && Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '';
+    return req('GET', `/api/points/links${qs}`);
+  },
+  pointsLinkVoid: (id) => req('DELETE', `/api/points/link/${encodeURIComponent(id)}`),
+  pointsGrant: (body) => req('POST', '/api/points/grant', body),
+  pointsBalance: (customer_id) => req('GET', `/api/points/balance?customer_id=${encodeURIComponent(customer_id)}`),
   checkoutPos: (payload) => req('POST', '/api/checkout/pos', payload),
   checkoutDelivery: (payload) => req('POST', '/api/checkout/delivery', payload),
   importDelivery: (payload) => req('POST', '/api/import/delivery', payload),

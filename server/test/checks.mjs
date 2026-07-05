@@ -87,49 +87,66 @@ export async function runChecks(BASE) {
   const dup = await mkCheckout(100, 't-conc-1');
   ok('replayed client_txn_id is a no-op', dup.status === 200 && dup.data.duplicate === true);
 
-  console.log('\n[5] Loyalty via customer_id + rename + server-side /api/loyalty');
-  let cust = await req('POST', '/api/customer/line-login', { devLineUserId: 'U_TEST_1' });
+  console.log('\n[5] Shop-issued points: links, grants, claims, POS spend');
+  let cust = await req('POST', '/api/customer/line-login', { devLineUserId: 'U_TEST_1', devName: 'Point Tester' });
   ok('LINE dev login -> needsRegistration', cust.data.needsRegistration === true);
-  cust = await req('POST', '/api/customer/register', { phone: '0899999999', name: 'Loyal Tester' }, cust.data.token);
+  cust = await req('POST', '/api/customer/register', { phone: '0899999999' }, cust.data.token);
   ok('customer registered', cust.status === 200 && cust.data.customer?.id);
-  const custToken = cust.data.token, custId = cust.data.customer.id;
+  const custToken = cust.data.token, custId = cust.data.customer.id, custName = cust.data.customer.name;
 
-  const tenCups = Array.from({ length: 10 }, () => ({
-    date: '2026-07-02', customer_name: 'Loyal Tester', customer_id: String(custId),
-    menu_name: 'Espresso', quantity: 1, total_price: 60, cashier: 'staff', is_free: '0'
-  }));
-  r = await req('POST', '/api/checkout/pos', { sales: tenCups, requirements: [], date: '2026-07-02', client_txn_id: 't-loyal-1' }, staff);
-  ok('10-cup checkout recorded', r.status === 200 && Array.isArray(r.data) && r.data.length === 10);
+  r = await req('POST', '/api/points/link', { points: 5 }, staff);
+  ok('staff without points flag POST /api/points/link -> 403', r.status === 403, `got ${r.status}`);
+  r = await req('POST', '/api/points/link', { points: 0 }, admin);
+  ok('non-positive points -> 400', r.status === 400, `got ${r.status}`);
+  const link = await req('POST', '/api/points/link', { points: 5, note: 'test link' }, admin);
+  ok('link minted with token', link.status === 200 && typeof link.data.token === 'string' && link.data.token.length >= 32);
 
+  r = await req('POST', '/api/customer/claim-points', { token: link.data.token }, custToken);
+  ok('claim credits 5 points', r.status === 200 && r.data.points === 5 && r.data.balance === 5, JSON.stringify(r.data));
+  r = await req('POST', '/api/customer/claim-points', { token: link.data.token }, custToken);
+  ok('same-customer retry is idempotent', r.status === 200 && r.data.alreadyClaimed === true, JSON.stringify(r.data));
+
+  let cust2 = await req('POST', '/api/customer/line-login', { devLineUserId: 'U_TEST_2', devName: 'Other Tester' });
+  cust2 = await req('POST', '/api/customer/register', { phone: '0888888888' }, cust2.data.token);
+  r = await req('POST', '/api/customer/claim-points', { token: link.data.token }, cust2.data.token);
+  ok('another customer claiming a used link -> 409', r.status === 409, `got ${r.status}`);
+  r = await req('POST', '/api/customer/claim-points', { token: 'no-such-token' }, custToken);
+  ok('unknown token -> 404', r.status === 404, `got ${r.status}`);
+
+  const voidable = await req('POST', '/api/points/link', { points: 3 }, admin);
+  r = await req('DELETE', `/api/points/link/${voidable.data.id}`, undefined, admin);
+  ok('pending link voided', r.status === 200);
+  r = await req('DELETE', `/api/points/link/${link.data.id}`, undefined, admin);
+  ok('claimed link cannot be voided -> 409', r.status === 409, `got ${r.status}`);
+
+  r = await req('POST', '/api/points/grant', { customer_id: custId, points: 5, note: 'goodwill' }, admin);
+  ok('direct CRM grant -> balance 10', r.status === 200 && r.data.balance === 10, JSON.stringify(r.data));
+  r = await req('GET', `/api/points/balance?customer_id=${custId}`, undefined, staff);
+  ok('POS balance lookup: 10 points, 10 per free cup', r.status === 200 && r.data.balance === 10 && r.data.pointsPerFree === 10, JSON.stringify(r.data));
   let me = await req('GET', '/api/customer/me', undefined, custToken);
-  ok('loyalty: 10 purchased, 1 available', me.data.loyalty?.purchased === 10 && me.data.loyalty?.available === 1, JSON.stringify(me.data.loyalty));
+  ok('portal /me shows balance + 2 history rows', me.data.pointsBalance === 10 && Array.isArray(me.data.pointsHistory) && me.data.pointsHistory.length === 2, JSON.stringify({ b: me.data.pointsBalance, h: me.data.pointsHistory?.length }));
 
-  r = await req('GET', `/api/loyalty?customer_id=${custId}`, undefined, staff);
-  ok('staff /api/loyalty by customer_id matches customer-portal loyalty', r.status === 200 && r.data.available === 1 && r.data.purchased === 10, JSON.stringify(r.data));
-  r = await req('GET', '/api/loyalty?name=Loyal%20Tester', undefined, staff);
-  ok('staff /api/loyalty by typed name also matches', r.status === 200 && r.data.available === 1, JSON.stringify(r.data));
-  r = await req('GET', '/api/loyalty?name=Nobody%20Ever%20Sold%20To', undefined, staff);
-  ok('staff /api/loyalty for an unknown name returns zeros, not an error', r.status === 200 && r.data.purchased === 0);
-
-  r = await req('PUT', `/api/customers/${custId}`, { name: 'Renamed Tester' }, admin);
-  ok('customer renamed', r.status === 200 && r.data.name === 'Renamed Tester');
-  me = await req('GET', '/api/customer/me', undefined, custToken);
-  ok('loyalty survives rename (still 1 available)', me.data.loyalty?.available === 1, JSON.stringify(me.data.loyalty));
-
-  const redeem = await req('POST', '/api/customer/redeem', undefined, custToken);
-  ok('redeem code minted', redeem.status === 200 && /^\d{6}$/.test(redeem.data.code || ''));
-  const lookup = await req('GET', `/api/redemption/${redeem.data.code}`, undefined, staff);
-  ok('staff code lookup finds customer', lookup.status === 200 && lookup.data.customer_name === 'Renamed Tester');
-  r = await req('POST', '/api/checkout/pos', {
-    sales: [{ date: '2026-07-02', customer_name: 'Renamed Tester', customer_id: String(custId), menu_name: 'Espresso', quantity: 1, total_price: 0, cashier: 'staff', is_free: '1' }],
-    requirements: [], date: '2026-07-02', client_txn_id: 't-redeem-1', redemption_id: lookup.data.id
+  const freeCup = (name, promoId, txn) => req('POST', '/api/checkout/pos', {
+    sales: [{ date: '2026-07-02', customer_name: name, menu_name: 'Espresso', quantity: 1, total_price: 0, cashier: 'staff', is_free: '1', promotion_id: promoId }],
+    requirements: [], date: '2026-07-02', client_txn_id: txn
   }, staff);
-  ok('free cup checkout burns the code', r.status === 200);
-  r = await req('POST', '/api/checkout/pos', {
-    sales: [{ date: '2026-07-02', customer_name: 'Renamed Tester', menu_name: 'Espresso', quantity: 1, total_price: 0, cashier: 'staff', is_free: '1' }],
-    requirements: [], date: '2026-07-02', client_txn_id: 't-redeem-2', redemption_id: lookup.data.id
-  }, staff);
-  ok('re-using a burnt code -> 409', r.status === 409, `got ${r.status}`);
+
+  r = await freeCup(custName, '1', 't-pts-spend-1');
+  ok('point-funded free cup accepted', r.status === 200, `got ${r.status} ${JSON.stringify(r.data)}`);
+  r = await req('GET', `/api/points/balance?customer_id=${custId}`, undefined, staff);
+  ok('balance charged 10 -> 0', r.data.balance === 0, `got ${r.data.balance}`);
+  r = await freeCup(custName, '1', 't-pts-spend-2');
+  ok('insufficient points -> 409', r.status === 409, `got ${r.status}`);
+  r = await freeCup('Walk-in', '1', 't-pts-spend-3');
+  ok('point-funded cup without a customer -> 409', r.status === 409, `got ${r.status}`);
+  r = await freeCup('Walk-in', '', 't-pts-spend-4');
+  ok('goodwill comp (no promotion_id) accepted', r.status === 200, `got ${r.status}`);
+  r = await req('GET', `/api/points/balance?customer_id=${custId}`, undefined, staff);
+  ok('goodwill comp did not touch the balance', r.data.balance === 0, `got ${r.data.balance}`);
+
+  ok('old /api/customer/redeem is gone', (await req('POST', '/api/customer/redeem', {}, custToken)).status === 401);
+  ok('old /api/redemption/:code is gone', (await req('GET', '/api/redemption/123456', undefined, staff)).status === 404);
+  ok('old /api/loyalty is gone', (await req('GET', '/api/loyalty?customer_id=1', undefined, staff)).status === 404);
 
   console.log('\n[6] Shifts & Z-report');
   let shift = await req('POST', '/api/shift/open', { opening_cash: 500 }, staff);

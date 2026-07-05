@@ -1,13 +1,28 @@
 import React, { useState, useMemo } from 'react';
 import { useData } from '../lib/data.jsx';
-import { money, parseOrderCups, loyaltyStatus } from '../lib/helpers.js';
+import { api } from '../lib/api.js';
+import { money, parseOrderCups } from '../lib/helpers.js';
+import Modal from '../components/Modal.jsx';
 
 export default function CRM() {
-  const { data } = useData();
+  const { user, data, reload, pushToast } = useData();
   const { customers, salefront, saledelivery } = data;
   const [search, setSearch] = useState('');
+  const [granting, setGranting] = useState(null); // { customer, points, note }
+  const [busy, setBusy] = useState(false);
 
-  const promotion = (data.promotions || []).find(p => p.type === 'stamp' && p.status === 'Active');
+  const canGrant = user && (user.role === 'Admin' || String(user.access || '').split(',').includes('points'));
+
+  // Claimed ledger rows only — pending links belong to nobody yet.
+  const balances = useMemo(() => {
+    const map = new Map();
+    for (const row of data.point_ledger || []) {
+      if (row.status !== 'claimed' || row.customer_id == null) continue;
+      const id = Number(row.customer_id);
+      map.set(id, (map.get(id) || 0) + (Number(row.points) || 0));
+    }
+    return map;
+  }, [data.point_ledger]);
 
   const rows = customers.map(c => {
     const nl = c.name.toLowerCase();
@@ -22,13 +37,12 @@ export default function CRM() {
     let deliCups = 0;
     ds.forEach(x => Object.values(parseOrderCups(x.raw_order_string)).forEach(q => deliCups += q));
     const dates = [...fs.map(s => s.date), ...ds.map(s => s.date)].filter(Boolean).sort().reverse();
-    const loyalty = loyaltyStatus(c.name, salefront, promotion, c.id);
     return {
       id: c.id, name: c.name, address: c.address || 'N/A',
       orders: fs.length + ds.length, spending, cups: frontCups + deliCups,
-      last: dates[0] || 'N/A', loyalty
+      last: dates[0] || 'N/A', points: balances.get(c.id) || 0, customer: c
     };
-  }).filter(r => r.spending > 0).sort((a, b) => b.spending - a.spending);
+  }).filter(r => r.spending > 0 || r.points !== 0).sort((a, b) => b.spending - a.spending);
 
   const totalSpending = rows.reduce((s, r) => s + r.spending, 0);
   const totalCups = salefront.reduce((s, x) => s + (Number(x.quantity) || 0), 0)
@@ -39,6 +53,22 @@ export default function CRM() {
     if (!q) return rows;
     return rows.filter(r => [r.name, r.address].some(v => String(v || '').toLowerCase().includes(q)));
   }, [rows, search]);
+
+  const doGrant = async () => {
+    const pts = Number(granting.points);
+    if (!Number.isInteger(pts) || pts <= 0) return pushToast('Points must be a positive whole number.', 'warning');
+    setBusy(true);
+    try {
+      const r = await api.pointsGrant({ customer_id: granting.customer.id, points: pts, note: granting.note.trim() || undefined });
+      await reload(['point_ledger']);
+      setGranting(null);
+      pushToast(`Granted ${pts} point${pts > 1 ? 's' : ''} to ${granting.customer.name} (balance ${r.balance}).`, 'success');
+    } catch (e) {
+      pushToast(e.message || 'Could not grant points.', 'warning');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -53,7 +83,7 @@ export default function CRM() {
         </div>
         <div className="table-wrap">
           <table className="data">
-            <thead><tr><th>Rank</th><th>Name</th><th>Address</th><th>Orders</th><th>Spending</th><th>Loyalty</th><th>Last Order</th></tr></thead>
+            <thead><tr><th>Rank</th><th>Name</th><th>Address</th><th>Orders</th><th>Spending</th><th>Points</th><th>Last Order</th>{canGrant && <th></th>}</tr></thead>
             <tbody>
               {filteredRows.length ? filteredRows.map((r, i) => (
                 <tr key={r.id}>
@@ -61,20 +91,43 @@ export default function CRM() {
                   <td><span className="helper-text">{r.address}</span></td>
                   <td>{r.orders}</td><td><strong>{money(r.spending)}</strong></td>
                   <td>
-                    {promotion ? (
-                      <span className="helper-text">
-                        🎫 {r.loyalty.purchased % Number(promotion.buy_qty)}/{promotion.buy_qty}
-                        {r.loyalty.available > 0 && <strong style={{ color: 'var(--success-color)', marginLeft: 4 }}>🎁 {r.loyalty.available}</strong>}
-                      </span>
-                    ) : <span className="helper-text">—</span>}
+                    {r.points > 0
+                      ? <strong style={{ color: 'var(--success-color)' }}>⭐ {r.points}</strong>
+                      : <span className="helper-text">{r.points}</span>}
                   </td>
                   <td><span className="badge local">{r.last}</span></td>
+                  {canGrant && (
+                    <td>
+                      <button className="btn btn-sm btn-secondary" title="Grant points"
+                        onClick={() => setGranting({ customer: r.customer, points: 1, note: '' })}>
+                        <i className="fa-solid fa-coins"></i>
+                      </button>
+                    </td>
+                  )}
                 </tr>
-              )) : <tr className="empty-row"><td colSpan={7}>No customer records found.</td></tr>}
+              )) : <tr className="empty-row"><td colSpan={canGrant ? 8 : 7}>No customer records found.</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
+
+      {granting && (
+        <Modal title={`Grant points — ${granting.customer.name}`} onClose={() => setGranting(null)}
+          footer={<>
+            <button className="btn btn-secondary" onClick={() => setGranting(null)}>Cancel</button>
+            <button className="btn btn-primary" disabled={busy} onClick={doGrant}>Grant</button>
+          </>}>
+          <div className="field"><label>Points</label>
+            <input type="number" min="1" step="1" className="form-control" autoFocus value={granting.points}
+              onChange={(e) => setGranting(g => ({ ...g, points: e.target.value }))} />
+          </div>
+          <div className="field"><label>Note (optional)</label>
+            <input className="form-control" value={granting.note} placeholder="e.g. compensation, birthday"
+              onChange={(e) => setGranting(g => ({ ...g, note: e.target.value }))} />
+          </div>
+          <p className="helper-text">Points are added immediately — no link for the customer to click.</p>
+        </Modal>
+      )}
     </div>
   );
 }

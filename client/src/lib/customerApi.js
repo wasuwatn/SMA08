@@ -33,5 +33,5 @@ export const customerApi = {
   register: (body, pendingToken) => req('POST', '/api/customer/register', body, pendingToken),
   menuOptions: () => req('GET', '/api/customer/menu-options'),
   me: () => req('GET', '/api/customer/me'),
-  redeem: () => req('POST', '/api/customer/redeem', {})
+  claimPoints: (token) => req('POST', '/api/customer/claim-points', { token })
 };

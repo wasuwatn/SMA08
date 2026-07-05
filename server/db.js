@@ -139,10 +139,27 @@ export const TABLE_CONFIG = {
       promotion_id INTEGER, status TEXT, created_at TIMESTAMPTZ, expires_at TIMESTAMPTZ,
       used_at TIMESTAMPTZ, used_order_no TEXT)`
   },
-  // Promotion rules. Only `type: 'stamp'` (buy_qty cups -> free_qty free cups,
-  // capped at max_free_value) is implemented today; `config` is reserved JSON
-  // for future promotion types (percent discount, buy-X-get-Y, etc.) without
-  // a schema change.
+  // Shop-issued loyalty points. One row per event, signed `points`:
+  //   kind 'link'  — a claim link the shop hands out; starts status 'pending'
+  //                  with a unique token, flips to 'claimed' when a customer
+  //                  opens it (single-use, no expiry).
+  //   kind 'crm'   — direct grant from the CRM page (inserted already 'claimed').
+  //   kind 'spend' — negative row written by POS checkout for a point-funded
+  //                  free cup (also 'claimed', carries the order_no).
+  // Balance = SUM(points) WHERE customer_id = X AND status = 'claimed'.
+  point_ledger: {
+    pk: 'id', auto: true,
+    columns: ['id', 'token', 'customer_id', 'points', 'kind', 'status', 'note',
+      'created_by', 'created_at', 'claimed_at', 'order_no'],
+    ddl: `CREATE TABLE IF NOT EXISTS point_ledger (
+      id SERIAL PRIMARY KEY, token TEXT, customer_id INTEGER, points INTEGER,
+      kind TEXT, status TEXT, note TEXT, created_by TEXT,
+      created_at TIMESTAMPTZ, claimed_at TIMESTAMPTZ, order_no TEXT)`
+  },
+  // Promotion rules. `type: 'points'` (buy_qty = points per free cup, capped at
+  // max_free_value) is the active loyalty type; 'stamp' rows are legacy.
+  // `config` is reserved JSON for future promotion types (percent discount,
+  // buy-X-get-Y, etc.) without a schema change.
   promotions: {
     pk: 'id', auto: true,
     columns: ['id', 'name', 'type', 'status', 'buy_qty', 'free_qty', 'max_free_value', 'config'],
@@ -423,7 +440,10 @@ async function createIndexes() {
     // UNIQUE (not just an index): the redeem endpoint retries on a 23505
     // collision, but that only works if the DB actually rejects duplicates —
     // two pending codes with the same 6 digits must never coexist.
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_redemptions_pending_code ON redemptions (code) WHERE status = 'pending'"
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_redemptions_pending_code ON redemptions (code) WHERE status = 'pending'",
+    // Claim links must be unique; crm/spend rows have no token (NULL is exempt).
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_point_ledger_token ON point_ledger (token) WHERE token IS NOT NULL',
+    'CREATE INDEX IF NOT EXISTS idx_point_ledger_customer ON point_ledger (customer_id)'
   ];
   for (const s of stmts) await pool.query(s);
 }
@@ -498,6 +518,14 @@ async function migrate() {
     try { await pool.query(sql); } catch { /* ignore (constraint already exists, etc.) */ }
   }
 
+  // Phase-5: the self-redeem code flow was replaced by shop-issued point
+  // links (point_ledger). The redemptions table is kept as history, but any
+  // still-pending codes can never be used again — mark them expired so the
+  // history reads correctly.
+  try {
+    await pool.query("UPDATE redemptions SET status = 'expired' WHERE status = 'pending'");
+  } catch { /* ignore */ }
+
   // Phase-4: Supabase flags any table without RLS as "Unrestricted" in its
   // dashboard. That only matters for Supabase's own REST/GraphQL API
   // (PostgREST) — this hub never uses it (it talks to Postgres directly via
@@ -516,7 +544,7 @@ async function seed() {
   await withTransaction(async (client) => {
     await insertRow('users', {
       username: 'admin', password: await hashPassword('admin'),
-      access: 'dashboard,pos,delivery,materials,stock,bom,expenses,customers,users,daily,settings,promotions',
+      access: 'dashboard,pos,delivery,materials,stock,bom,expenses,customers,users,daily,settings,promotions,points',
       role: 'Admin'
     }, client);
     await insertRow('users', {
@@ -603,7 +631,7 @@ async function seed() {
     for (const a of addons) await insertRow('addons', a, client);
 
     await insertRow('promotions', {
-      name: 'Buy 10 Get 1 Free', type: 'stamp', status: 'Active',
+      name: '10 Points = 1 Free Cup', type: 'points', status: 'Active',
       buy_qty: 10, free_qty: 1, max_free_value: 70
     }, client);
 

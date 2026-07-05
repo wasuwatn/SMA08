@@ -13,6 +13,7 @@ import Recipes from './pages/Recipes.jsx';
 import Customers from './pages/Customers.jsx';
 import CRM from './pages/CRM.jsx';
 import Promotions from './pages/Promotions.jsx';
+import Points from './pages/Points.jsx';
 import Users from './pages/Users.jsx';
 import DailyCups from './pages/DailyCups.jsx';
 import Settings from './pages/Settings.jsx';
@@ -38,6 +39,7 @@ const NAV = [
   { group: 'Relations', items: [
     { id: 'customers', label: 'Customers', icon: 'fa-address-book', access: 'customers' },
     { id: 'crm', label: 'CRM Analytics', icon: 'fa-users-viewfinder', access: 'customers' },
+    { id: 'points', label: 'Points', icon: 'fa-coins', access: 'points' },
     { id: 'promotions', label: 'Promotions', icon: 'fa-gift', access: 'promotions' }
   ]},
   { group: 'Administration', items: [
@@ -49,7 +51,7 @@ const NAV = [
 const PAGES = {
   dashboard: Dashboard, delivery: Delivery, saleslog: SalesLog, expenselog: ExpenseLog, materials: Materials,
   inventory: Inventory, recipes: Recipes, customers: Customers,
-  crm: CRM, promotions: Promotions, users: Users, dailycups: DailyCups, settings: Settings
+  crm: CRM, points: Points, promotions: Promotions, users: Users, dailycups: DailyCups, settings: Settings
 };
 
 const ALL_FLAT = NAV.flatMap(g => g.items);

@@ -3,7 +3,7 @@
 export const TABLES = [
   'users', 'settings', 'materials', 'menuname', 'bom', 'childmenu', 'salefront', 'saledelivery',
   'stocklog', 'expenses', 'systemlog', 'customers', 'addons', 'packagingbom', 'matprepbom',
-  'deliverydaily', 'deliverymenu', 'promotions', 'shifts'
+  'deliverydaily', 'deliverymenu', 'promotions', 'shifts', 'point_ledger'
 ];
 
 // Transactional history tables that can grow unbounded. The Mother app's
@@ -12,7 +12,8 @@ export const TABLES = [
 // DataProvider's `skipHeavyTables` prop) and fetch anything date-scoped
 // on demand via the server's ?since/&until/&limit query support instead.
 export const HEAVY_TABLES = [
-  'salefront', 'saledelivery', 'stocklog', 'systemlog', 'expenses', 'deliverydaily', 'deliverymenu'
+  'salefront', 'saledelivery', 'stocklog', 'systemlog', 'expenses', 'deliverydaily', 'deliverymenu',
+  'point_ledger' // POS looks balances up via api.pointsBalance instead
 ];
 
 // Delivery GP is computed automatically as a fixed percentage of the base price.
@@ -166,26 +167,6 @@ export function computeCupCost(bomRows, materials, packagingbom = [], matprepbom
     }
   });
   return { cost, warn };
-}
-
-// Stamp-loyalty status for a named customer: how many paid cups they've
-// bought, how many free cups they've already received, and how many free
-// cups they're eligible for right now. Walk-ins (no name) never accumulate.
-// customer_id is a real backfilled FK (see migrate() in server/db.js), so a
-// customerId match is authoritative; name-only is for rows/customers without one.
-export function loyaltyStatus(customerName, salefront, promotion, customerId = null) {
-  if (!customerName || customerName === 'Walk-in' || !promotion) {
-    return { purchased: 0, given: 0, available: 0 };
-  }
-  const nl = customerName.trim().toLowerCase();
-  const mine = customerId != null
-    ? salefront.filter(s => Number(s.customer_id) === Number(customerId))
-    : salefront.filter(s => s.customer_name && s.customer_name.trim().toLowerCase() === nl);
-  const purchased = mine.filter(s => s.is_free !== '1').length;
-  const given = mine.filter(s => s.is_free === '1').length;
-  const buyQty = Number(promotion.buy_qty) || 1;
-  const available = Math.max(0, Math.floor(purchased / buyQty) - given);
-  return { purchased, given, available };
 }
 
 export function csvEscape(val) {

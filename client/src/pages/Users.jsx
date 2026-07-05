@@ -8,7 +8,7 @@ const ACCESS = [
   ['dashboard', 'Dashboard'], ['pos', 'POS Front'], ['delivery', 'Delivery'],
   ['materials', 'Materials'], ['stock', 'Warehouse'], ['bom', 'Recipes / BOM'],
   ['expenses', 'Expenses'], ['customers', 'Customers / CRM'], ['promotions', 'Promotions'],
-  ['users', 'Users'], ['daily', 'Daily Cups'], ['settings', 'Settings']
+  ['points', 'Points'], ['users', 'Users'], ['daily', 'Daily Cups'], ['settings', 'Settings']
 ];
 
 export default function Users() {
