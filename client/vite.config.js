@@ -3,11 +3,12 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { resolve } from 'node:path';
 
-// Four entry points share one src/ tree:
-//   index.html    → Mother (read / dashboards / admin)
-//   pos.html      → POS satellite (installable, works offline)
-//   expense.html  → Expense satellite
-//   customer.html → Customer rewards portal (opened inside LINE via LIFF)
+// Five entry points share one src/ tree:
+//   index.html            → Mother (read / dashboards / admin)
+//   pos.html              → POS satellite (installable, works offline)
+//   expense.html          → Expense satellite
+//   customer.html         → Customer rewards portal (opened inside LINE via LIFF)
+//   expense-review.html   → LINE slip review portal (opened inside LINE via LIFF)
 export default defineConfig({
   plugins: [
     react(),
@@ -20,8 +21,8 @@ export default defineConfig({
         background_color: '#f5f3ea', theme_color: '#5b6236'
       },
       // Multi-page app: disable the SPA navigation fallback so that requests
-      // to /pos.html, /expense.html and /customer.html are served from their
-      // own precached shells, not redirected to index.html.
+      // to /pos.html, /expense.html, /customer.html and /expense-review.html
+      // are served from their own precached shells, not redirected to index.html.
       workbox: {
         navigateFallback: null
       }
@@ -33,7 +34,8 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         pos: resolve(__dirname, 'pos.html'),
         expense: resolve(__dirname, 'expense.html'),
-        customer: resolve(__dirname, 'customer.html')
+        customer: resolve(__dirname, 'customer.html'),
+        expenseReview: resolve(__dirname, 'expense-review.html')
       }
     }
   },

@@ -12,6 +12,7 @@
     "client": "npm --prefix client run dev",
     "build": "npm --prefix client run build",
     "build:customer": "npm --prefix client run build:customer",
+    "build:expense-review": "npm --prefix client run build:expense-review",
     "build:exe": "npm run build && pkg launcher.cjs --targets node22-win-x64 --output KOTEA.exe",
     "build:pos-exe": "npm run build && pkg launcher.pos.cjs --targets node22-win-x64 --output KOTEA-POS.exe",
     "build:expense-exe": "npm run build && pkg launcher.expense.cjs --targets node22-win-x64 --output KOTEA-Expense.exe",
