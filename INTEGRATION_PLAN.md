@@ -257,11 +257,18 @@ CREATE TABLE IF NOT EXISTS pending_slips (
 
 ### 2.7 Deploy & cutover
 
-1. Build coffee-pos-buddy ด้วย `VITE_API_BASE=https://<hub>` → deploy static/Vercel (HTTPS)
-2. เพิ่ม origin ใหม่ใน `CORS_ORIGIN` ของ hub
+> อัปเดต: coffee-pos-buddy build ด้วย TanStack Start nitro ซึ่ง default ไปที่
+> **Cloudflare Workers** (ไม่ใช่ static host ธรรมดาแบบที่ร่างไว้ตอนแรก) —
+> ขั้นตอน build/deploy ละเอียดอยู่ใน `README.md` ของ repo นั้นแล้ว
+> (`bun run build` → `npx nitro deploy --prebuilt`, หรือผูก GitHub repo เข้ากับ
+> Cloudflare Workers/Pages project ให้ deploy อัตโนมัติทุก push)
+
+1. ✅ Build + deploy ด้วย `VITE_API_BASE=https://<hub>` (baked ตอน build) — ดู coffee-pos-buddy/README.md
+2. เพิ่ม origin ที่ deploy ได้ใน `CORS_ORIGIN` ของ hub แล้ว restart hub — **ต้องทำมือ** (ยังไม่มี hub จริง deploy อยู่ให้ชี้)
 3. **รันคู่กับ `pos.html` เดิม** — ทั้งคู่เขียนผ่าน endpoint เดียวกัน ข้อมูลไม่ชนกัน
    (ระวังอย่างเดียว: อย่าเปิด 2 กะพร้อมกัน — hub บังคับกะเดียวอยู่แล้ว)
-4. ใช้จริงบน iPhone อย่างน้อย 1–2 สัปดาห์ → เทียบ Z-report กับของเดิม
+4. ใช้จริงบน iPhone อย่างน้อย 1–2 สัปดาห์ → เทียบ Z-report กับของเดิม — **ต้องใช้เวลา/อุปกรณ์จริง ทำมือ**
+   (checklist ละเอียดอยู่ใน coffee-pos-buddy/README.md ส่วน "Cutover from pos.html")
 5. เสถียรแล้วค่อยเลิกใช้ `pos.html` (เก็บโค้ดไว้ก่อน ยังไม่ลบ)
 
 ### 2.8 Definition of done (Phase 2)
