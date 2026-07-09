@@ -258,10 +258,12 @@ CREATE TABLE IF NOT EXISTS pending_slips (
 ### 2.7 Deploy & cutover
 
 > อัปเดต: coffee-pos-buddy build ด้วย TanStack Start nitro ซึ่ง default ไปที่
-> **Cloudflare Workers** (ไม่ใช่ static host ธรรมดาแบบที่ร่างไว้ตอนแรก) —
-> ขั้นตอน build/deploy ละเอียดอยู่ใน `README.md` ของ repo นั้นแล้ว
-> (`bun run build` → `npx nitro deploy --prebuilt`, หรือผูก GitHub repo เข้ากับ
-> Cloudflare Workers/Pages project ให้ deploy อัตโนมัติทุก push)
+> Cloudflare Workers — ตอนนี้ pin ไว้ที่ preset `vercel` แล้ว (`nitro: { preset:
+> "vercel" }` ใน `vite.config.ts`) ให้ตรงกับ static host ที่ร่างไว้ตอนแรกและ
+> เข้าชุดเดียวกับ LIFF pages ของ repo นี้ — ขั้นตอน build/deploy ละเอียดอยู่ใน
+> `README.md` ของ repo นั้นแล้ว (`bun run build` → `npx vercel deploy
+> --prebuilt --prod`, หรือผูก GitHub repo เข้ากับ Vercel project ให้ deploy
+> อัตโนมัติทุก push)
 
 1. ✅ Build + deploy ด้วย `VITE_API_BASE=https://<hub>` (baked ตอน build) — ดู coffee-pos-buddy/README.md
 2. เพิ่ม origin ที่ deploy ได้ใน `CORS_ORIGIN` ของ hub แล้ว restart hub — **ต้องทำมือ** (ยังไม่มี hub จริง deploy อยู่ให้ชี้)

@@ -130,15 +130,16 @@ local-dev fallback, same as `/customer.html`.
 A second, independently-deployed POS app ([wasuwatn/coffee-pos-buddy](https://github.com/wasuwatn/coffee-pos-buddy))
 built specifically for iPhone, wired directly onto this hub instead of its
 own database — see that repo's `INTEGRATION_PLAN.md` reference and README
-for its own build/deploy steps (Cloudflare Workers via the TanStack Start
-nitro build). It's a satellite exactly like `pos.html`: same
-`/api/checkout/pos`, `/api/shift/*`, and generic `/api/:table` contract, same
-staff JWT login.
+for its own build/deploy steps (Vercel, same as this repo's LIFF pages —
+its TanStack Start/nitro build is pinned to the `vercel` preset). It's a
+satellite exactly like `pos.html`: same `/api/checkout/pos`, `/api/shift/*`,
+and generic `/api/:table` contract, same staff JWT login.
 
 To bring it online against this hub:
 
-1. Deploy it (its README covers `bun run build` → Cloudflare Workers) with
-   build-time env var `VITE_API_BASE=https://<hub-public-url>`.
+1. Deploy it (its README covers `bun run build` → `vercel deploy --prebuilt`,
+   or a GitHub-connected Vercel project) with build-time env var
+   `VITE_API_BASE=https://<hub-public-url>`.
 2. Add its deployed origin to the hub's `CORS_ORIGIN` env var and restart the hub.
 3. Run it side by side with `pos.html` for a trial period before retiring
    the older POS — both write through the same endpoints, so sales/stock
