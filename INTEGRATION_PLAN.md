@@ -286,6 +286,27 @@ CREATE TABLE IF NOT EXISTS pending_slips (
 
 ---
 
+## Phase 3 — แต้มสะสมจากใบเสร็จ (QR + รหัส 6 หลัก)
+
+เพิ่มเติมจากระบบแจกแต้มเดิม (ลิงก์ที่พนักงานสร้าง / grant จาก CRM — ยังทำงานเหมือนเดิมทุกอย่าง)
+กลไกใหม่นี้แจกแต้มอัตโนมัติทุกบิลที่ขายผ่าน POS หน้าร้าน (ทั้ง `pos.html` และ `coffee-pos-buddy`)
+โดยไม่ต้องรอพนักงานสร้างลิงก์ให้ — ลูกค้าแสกน QR หรือกรอกรหัสเองที่ `customer.html`
+
+- **แต้มที่ได้ = จำนวนแก้วที่ขายจริงในบิล** (ไม่นับแก้วฟรีที่แลกด้วยแต้ม — กันแจกซ้ำ)
+  ต้องมีโปรโมชั่นแต้ม (`promotions.type='points'`, status Active) อยู่ด้วย ไม่งั้นไม่แจก
+- Hub: `runCheckout()` (`server/index.js`) generate รหัส 6 ตัว (A-Z0-9 ตัด 0/O/1/I กันอ่านผิด)
+  แล้ว insert แถว `point_ledger` ใหม่ `kind='receipt', status='pending', token=<รหัส>`
+  แนบ `claim_code`/`claim_points` ไปกับแถวแรกของ response (ไม่ผ่าน schema ของ `salefront` เอง)
+- `POST /api/customer/claim-points` ขยายจากรับแค่ `kind='link'` เป็น `kind IN ('link','receipt')`
+  — endpoint เดิม ไม่ต้องเพิ่ม endpoint ใหม่
+- ไม่ต้อง migrate DB เพิ่ม — index `idx_point_ledger_token` (unique, partial) รองรับ token ใหม่อยู่แล้ว
+- `pos.html`: `POS.jsx` เจน QR จาก `claim_code` หลัง checkout สำเร็จ → พิมพ์ท้ายใบเสร็จ (`Receipt.jsx`)
+  เฉพาะบิลที่เพิ่งขาย ไม่โผล่ตอน reprint จาก Sales History
+- `coffee-pos-buddy`: เก็บ `claim_code` ไว้ใน `sessionStorage` ตอน checkout แล้วอ่านที่หน้า
+  `/receipt/$id` (คนละ route กับ `/history/$id` ที่ใช้ reprint บิลเก่า จึงไม่มีทางโผล่ QR ผิดบิล)
+  ต้องตั้ง `VITE_LIFF_ID` หรือ `VITE_PORTAL_BASE` เพิ่ม (ดู README ของ repo นั้น) เพราะ deploy คนละ origin กับ hub
+- `customer.html`: เพิ่มฟอร์มกรอกรหัส 6 หลักด้วยมือ (นอกจากแสกน QR) เรียก `claimPoints` endpoint เดิม
+
 ## ลำดับงานรวม
 
 | ลำดับ | งาน | Repo | ขนาด |

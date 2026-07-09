@@ -28,6 +28,22 @@ export const THEMES = [
 
 export const PAGE_SIZE = 20;
 
+// Shared claim-link/QR target for any point_ledger token (shop-issued link OR
+// a POS receipt claim code) — always route through liff.line.me when a LIFF
+// ID is configured: LINE resolves that URL straight to the LIFF app's
+// registered Endpoint URL and handles login itself, so it works regardless of
+// which raw domain customer.html is actually served from. Opening the raw
+// domain URL directly (customer.html?claim=...) instead makes liff.login()'s
+// redirect_uri include the query string, which LINE's login rejects with a
+// 400 on some LIFF app configs — liff.line.me sidesteps that entirely.
+// VITE_PORTAL_BASE + raw domain is only a fallback for local dev / setups
+// with no LIFF ID yet (VITE_DEV_LINE_USER testing).
+export const claimUrl = (token) => {
+  const liffId = import.meta.env.VITE_LIFF_ID;
+  if (liffId) return `https://liff.line.me/${liffId}?claim=${token}`;
+  return `${(import.meta.env.VITE_PORTAL_BASE || window.location.origin).replace(/\/$/, '')}/customer.html?claim=${token}`;
+};
+
 export const money = (v) =>
   `฿${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 

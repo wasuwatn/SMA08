@@ -338,10 +338,13 @@ app.post('/api/customer/redeem', requireCustomer, async (req, res) => {
   }
 });
 
-// Claim a shop-issued point link. Single-use, no expiry: the atomic UPDATE
-// guard (same pattern as the old redemption burn) means only the first
-// customer wins; a retry by the SAME customer is answered idempotently so
-// LIFF page reloads / double-taps don't surface errors.
+// Claim a shop-issued point link OR a POS receipt claim code (same token
+// column, distinguished only by `kind`: 'link' for staff-issued shareable
+// links, 'receipt' for the per-order QR/6-char code printed on receipts).
+// Single-use, no expiry: the atomic UPDATE guard (same pattern as the old
+// redemption burn) means only the first customer wins; a retry by the SAME
+// customer is answered idempotently so LIFF page reloads / double-taps
+// (or the customer.html manual-entry form) don't surface errors.
 app.post('/api/customer/claim-points', requireCustomer, async (req, res) => {
   const token = String(req.body?.token || '').trim();
   if (!token) return res.status(400).json({ error: 'Token is required.' });
@@ -350,7 +353,7 @@ app.post('/api/customer/claim-points', requireCustomer, async (req, res) => {
     if (!customer) return res.status(404).json({ error: 'Customer not found.' });
     const { rows, rowCount } = await pool.query(
       `UPDATE point_ledger SET status = 'claimed', customer_id = $2, claimed_at = $3
-       WHERE token = $1 AND kind = 'link' AND status = 'pending' RETURNING points`,
+       WHERE token = $1 AND kind IN ('link', 'receipt') AND status = 'pending' RETURNING points`,
       [token, customer.id, new Date().toISOString()]
     );
     if (rowCount) {
@@ -358,13 +361,13 @@ app.post('/api/customer/claim-points', requireCustomer, async (req, res) => {
       return res.json({ points: rows[0].points, balance: await pointsBalanceFor(customer.id) });
     }
     const { rows: [existing] } = await pool.query(
-      "SELECT customer_id, points FROM point_ledger WHERE token = $1 AND kind = 'link' LIMIT 1", [token]
+      "SELECT customer_id, points FROM point_ledger WHERE token = $1 AND kind IN ('link', 'receipt') LIMIT 1", [token]
     );
-    if (!existing) return res.status(404).json({ error: 'Link not found.' });
+    if (!existing) return res.status(404).json({ error: 'Code not found.' });
     if (existing.customer_id === customer.id) {
       return res.json({ alreadyClaimed: true, points: existing.points, balance: await pointsBalanceFor(customer.id) });
     }
-    res.status(409).json({ error: 'This link has already been claimed.' });
+    res.status(409).json({ error: 'This code has already been claimed.' });
   } catch (e) {
     fail(res, e);
   }
@@ -691,6 +694,15 @@ app.get('/api/redemption/:code', async (req, res) => {
 // key1 = this constant, key2 = customer_id), same idea as SHIFT_LOCK_KEY below.
 const POINTS_LOCK_KEY = 823402;
 
+// Alphabet excludes 0/O/1/I so a customer typing the code from a receipt at
+// customer.html can't confuse look-alike characters.
+const CLAIM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function generateClaimCode() {
+  let code = '';
+  for (let i = 0; i < 6; i++) code += CLAIM_CODE_ALPHABET[crypto.randomInt(CLAIM_CODE_ALPHABET.length)];
+  return code;
+}
+
 async function runCheckout(table, body, user) {
   const sales = body.sales || (body.sale ? [body.sale] : []);
   const { requirements = [], date, client_txn_id, force = false, expense = null, redemption_id = null } = body;
@@ -780,11 +792,44 @@ async function runCheckout(table, body, user) {
         }, client);
       }
     }
+    // Additive loyalty mechanism (on top of the shop-issued point links/CRM
+    // grants above, unchanged): every completed POS order earns a receipt
+    // claim code worth one point per cup actually sold — free/points-redeemed
+    // cups don't re-earn. Requires an active points promotion (nothing to
+    // redeem points for otherwise). Customer scans the QR or types the code
+    // into customer.html to claim it (POST /api/customer/claim-points).
+    let claimCode = null;
+    let claimPoints = 0;
+    if (table === 'salefront' && sales.length) {
+      claimPoints = sales.filter(s => s.is_free !== '1').length;
+      if (claimPoints > 0 && await activePointsPromotion()) {
+        for (let attempt = 0; !claimCode && attempt < 5; attempt++) {
+          const candidate = generateClaimCode();
+          try {
+            await insertRow('point_ledger', {
+              token: candidate, points: claimPoints, kind: 'receipt', status: 'pending',
+              note: `Receipt claim (${claimPoints} cup${claimPoints > 1 ? 's' : ''})`,
+              created_by: user, created_at: new Date().toISOString(), order_no: orderNo
+            }, client);
+            claimCode = candidate;
+          } catch (e) {
+            if (e.code !== '23505') throw e; // code collision — retry with a fresh one
+          }
+        }
+      }
+    }
     const out = [];
     for (const s of sales) {
       const row = orderNo ? { ...s, order_no: orderNo } : { ...s };
       if (table === 'salefront' && resolvedCustomerId != null) row.customer_id = resolvedCustomerId;
       out.push(await insertRow(table, row, client));
+    }
+    // insertRow filters unknown columns, so the claim code can't ride on the
+    // salefront row itself — attach it to the returned object after the fact
+    // so it reaches the checkout response without a schema change.
+    if (claimCode && out[0]) {
+      out[0].claim_code = claimCode;
+      out[0].claim_points = claimPoints;
     }
     // Promo giveaway cups are recorded as a cost (their BOM materials are
     // still deducted above like any other cup) rather than silently eating
