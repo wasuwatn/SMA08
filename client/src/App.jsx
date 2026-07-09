@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useData } from './lib/data.jsx';
 import Toasts from './components/Toasts.jsx';
+import BootLoading from './components/BootLoading.jsx';
 import ChangePassword from './components/ChangePassword.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -57,7 +58,7 @@ const PAGES = {
 const ALL_FLAT = NAV.flatMap(g => g.items);
 
 export default function App() {
-  const { user, logout, settings, pushToast, online } = useData();
+  const { user, booting, logout, settings, pushToast, online } = useData();
   const [tab, setTab] = useState('dashboard');
   const [year, setYear] = useState(2026);
   const [navOpen, setNavOpen] = useState(false); // mobile sidebar drawer
@@ -74,6 +75,7 @@ export default function App() {
     return first ? first.id : 'dashboard';
   }, [tab, user]); // eslint-disable-line
 
+  if (booting) return <BootLoading />;
   if (!user) return (<><Login /><Toasts /></>);
   if (user.mustChangePassword) return (<><ChangePassword /><Toasts /></>);
 

@@ -53,7 +53,9 @@ access flag; the `users` table is Admin-only).
 ## Deploying (cloud / multi-device)
 
 - Hub → any Node host (Render/Railway/Fly). Set `DATABASE_URL`, `JWT_SECRET`, and
-  `CORS_ORIGIN` (comma-separated origins of the satellite apps).
+  `CORS_ORIGIN` (comma-separated origins of the satellite apps). Set
+  `LINE_CHANNEL_ID` if the customer rewards LIFF is in use, and `LINE_SLIP_SECRET`
+  if the Make.com expense-slip automation (below) is in use.
 - Satellite apps → build (`npm run build`) and serve the `dist/` from the hub or a
   static host over **HTTPS** (required for the PWA service worker). Point them at
   the hub with `VITE_API_BASE=https://your-hub` at build time.
@@ -77,6 +79,72 @@ staff apps may only run intermittently.
 
 The hub's own `/customer.html` route and `liff.state` redirect are left in
 place as a harmless fallback for local dev — nothing to remove there.
+
+### LINE expense-slip automation (Make.com) + review portal (Vercel)
+
+Human-in-the-loop expense capture: a receipt photo sent to the shop's LINE OA
+is OCR'd by a Make.com scenario, POSTed to the hub as a "pending slip", and a
+staff member reviews/edits it in a LIFF page before it becomes a real
+`expenses` row (with optional stock replenishment). Full design in
+[`INTEGRATION_PLAN.md`](./INTEGRATION_PLAN.md) (Phase 1).
+
+**Hub side** — set `LINE_SLIP_SECRET` (any random string) on the hub. Make.com
+sends it back as the `X-Line-Webhook-Secret` header on `POST /api/line/slips`,
+the only way in without a staff/customer session:
+
+- `POST /api/line/slips` — Make.com calls this after OCR (`X-Line-Webhook-Secret`
+  header required). Upserts by `line_message_id` (idempotent — a retried
+  webhook delivery returns the same slip instead of creating a duplicate) and
+  returns `{ id, confirm_token }`.
+- `GET /api/line/slips/:id?token=...` / `POST /api/line/slips/:id/confirm` —
+  used by the review page below; the slip's own `confirm_token` (from the
+  Flex Message button URL) is the only auth, no staff login required.
+
+**Review page** (`expense-review.html`) deploys the same way as the customer
+portal:
+
+1. `npm run build:expense-review` (repo root) builds only `expense-review.html`
+   into `client/dist-expense-review/`.
+2. Create a **second, separate Vercel project** pointed at this repo (the
+   existing `vercel.json` is already claimed by the customer portal project).
+   In that project's settings, set Install Command `npm --prefix client
+   install`, Build Command `npm --prefix client run build:expense-review`,
+   Output Directory `client/dist-expense-review` (`vercel.expense-review.json`
+   documents the same values for reference / `vercel --local-config` deploys).
+   Set env var `VITE_API_BASE=https://<hub-public-url>` (and
+   `VITE_EXPENSE_LIFF_ID=<your LIFF id>` once you've created the LIFF app
+   below — the page still works without it, just skips the closing chat
+   message / auto-close).
+3. Add the Vercel domain to the hub's `CORS_ORIGIN` env var and restart the hub.
+4. In LINE Developers Console: reuse the same Messaging API channel as the
+   rewards bot (or a new one), point its Webhook URL at the Make.com scenario,
+   and add a **new LIFF app** (separate from the customer-rewards LIFF —
+   this one is for staff, not customers) with Endpoint URL
+   `https://<vercel-domain>/` and scope `chat_message.write`.
+
+The hub's own `/expense-review.html` route is left in place as a harmless
+local-dev fallback, same as `/customer.html`.
+
+### Kafe POS (coffee-pos-buddy) — the iPhone-first satellite
+
+A second, independently-deployed POS app ([wasuwatn/coffee-pos-buddy](https://github.com/wasuwatn/coffee-pos-buddy))
+built specifically for iPhone, wired directly onto this hub instead of its
+own database — see that repo's `INTEGRATION_PLAN.md` reference and README
+for its own build/deploy steps (Vercel, same as this repo's LIFF pages —
+its TanStack Start/nitro build is pinned to the `vercel` preset). It's a
+satellite exactly like `pos.html`: same `/api/checkout/pos`, `/api/shift/*`,
+and generic `/api/:table` contract, same staff JWT login.
+
+To bring it online against this hub:
+
+1. Deploy it (its README covers `bun run build` → `vercel deploy --prebuilt`,
+   or a GitHub-connected Vercel project) with build-time env var
+   `VITE_API_BASE=https://<hub-public-url>`.
+2. Add its deployed origin to the hub's `CORS_ORIGIN` env var and restart the hub.
+3. Run it side by side with `pos.html` for a trial period before retiring
+   the older POS — both write through the same endpoints, so sales/stock
+   never conflict; just don't open two shifts at once (the hub only allows
+   one open shift at a time).
 
 ## Notes / deferred (ponytail)
 

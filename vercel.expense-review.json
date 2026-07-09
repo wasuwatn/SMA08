@@ -1,0 +1,8 @@
+{
+  "installCommand": "npm --prefix client install",
+  "buildCommand": "npm --prefix client run build:expense-review",
+  "outputDirectory": "client/dist-expense-review",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/expense-review.html" }
+  ]
+}

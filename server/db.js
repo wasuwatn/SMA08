@@ -277,6 +277,23 @@ export const TABLE_CONFIG = {
     pk: 'id', auto: false,
     columns: ['id', 'created_at'],
     ddl: `CREATE TABLE IF NOT EXISTS processed_txns (id TEXT PRIMARY KEY, created_at TIMESTAMPTZ)`
+  },
+  // "Pending slip" bucket for the LINE x Make.com receipt-OCR expense intake
+  // (see INTEGRATION_PLAN.md Phase 1). Make.com posts a row here after OCR;
+  // `confirm_token` gates both the read and the confirm write so the LIFF
+  // review page needs no separate login — the token IS the auth for that one
+  // slip. `line_message_id` is UNIQUE so a retried webhook delivery can't
+  // create a second pending row for the same physical slip. `expense_id` is
+  // filled in once the slip is confirmed and turned into a real `expenses` row.
+  pending_slips: {
+    pk: 'id', auto: true,
+    columns: ['id', 'line_message_id', 'line_user_id', 'amount', 'merchant', 'category',
+      'slip_image_url', 'ocr_raw', 'status', 'confirm_token', 'expense_id', 'created_at', 'confirmed_at'],
+    ddl: `CREATE TABLE IF NOT EXISTS pending_slips (
+      id SERIAL PRIMARY KEY, line_message_id TEXT UNIQUE, line_user_id TEXT,
+      amount DOUBLE PRECISION DEFAULT 0, merchant TEXT, category TEXT,
+      slip_image_url TEXT, ocr_raw TEXT, status TEXT DEFAULT 'pending',
+      confirm_token TEXT, expense_id INTEGER, created_at TIMESTAMPTZ, confirmed_at TIMESTAMPTZ)`
   }
 };
 
@@ -443,7 +460,8 @@ async function createIndexes() {
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_redemptions_pending_code ON redemptions (code) WHERE status = 'pending'",
     // Claim links must be unique; crm/spend rows have no token (NULL is exempt).
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_point_ledger_token ON point_ledger (token) WHERE token IS NOT NULL',
-    'CREATE INDEX IF NOT EXISTS idx_point_ledger_customer ON point_ledger (customer_id)'
+    'CREATE INDEX IF NOT EXISTS idx_point_ledger_customer ON point_ledger (customer_id)',
+    "CREATE INDEX IF NOT EXISTS idx_pending_slips_status ON pending_slips (status)"
   ];
   for (const s of stmts) await pool.query(s);
 }
