@@ -1,14 +1,16 @@
 import React from 'react';
 import { useData } from './lib/data.jsx';
 import Login from './pages/Login.jsx';
+import BootLoading from './components/BootLoading.jsx';
 import ChangePassword from './components/ChangePassword.jsx';
 import Toasts from './components/Toasts.jsx';
 
 // Minimal chrome shared by the POS and Expense satellite apps: a login gate, an
 // online/offline + queue indicator, and the single page this app exists for.
 export default function SatelliteApp({ title, icon, access, Page }) {
-  const { user, logout, online, pending } = useData();
+  const { user, booting, logout, online, pending } = useData();
 
+  if (booting) return <BootLoading />;
   if (!user) return (<><Login /><Toasts /></>);
   if (user.mustChangePassword) return (<><ChangePassword /><Toasts /></>);
 

@@ -19,6 +19,13 @@ export function DataProvider({ children, skipHeavyTables = false }) {
     [skipHeavyTables]
   );
   const [user, setUser] = useState(null);
+  // True only while restoring a saved session on first mount (checking the
+  // token is still valid + pulling the first batch of tables). Consumers
+  // (App.jsx / SatelliteApp.jsx) show a loading screen instead of the app
+  // shell during this window, so a slow/cold-starting hub never flashes an
+  // "authenticated but empty" UI before settling on Login or the real data.
+  // Stays false forever when there was never a saved session to restore.
+  const [booting, setBooting] = useState(true);
   const [theme, setThemeState] = useState(localStorage.getItem('KOTEA_THEME') || 'kopi-green');
   const [data, setData] = useState(() => Object.fromEntries(TABLES.map(t => [t, []])));
   const [toasts, setToasts] = useState([]);
@@ -157,7 +164,11 @@ export function DataProvider({ children, skipHeavyTables = false }) {
     setUser(null);
   }, []);
 
-  // Restore a previous session (if any) on first load.
+  // Restore a previous session (if any) on first load. `reload()` never
+  // rejects (each table swallows its own fetch error internally), but a 401
+  // on any of those requests fires `onUnauthorized` (-> logout()) synchronously
+  // as it lands — so by the time this await resolves, `user` already reflects
+  // the real outcome (restored, or logged out) and it's safe to stop booting.
   useEffect(() => {
     setUnauthorizedHandler(logout);
     const token = localStorage.getItem('KOTEA_TOKEN');
@@ -165,7 +176,9 @@ export function DataProvider({ children, skipHeavyTables = false }) {
     if (token && savedUser) {
       setApiToken(token);
       setUser(JSON.parse(savedUser));
-      reload().then(sync).catch(logout); // drain anything queued from a past offline session
+      reload().then(sync).catch(logout).finally(() => setBooting(false)); // drain anything queued from a past offline session
+    } else {
+      setBooting(false);
     }
   }, [reload, logout, sync]);
 
@@ -190,7 +203,7 @@ export function DataProvider({ children, skipHeavyTables = false }) {
   const settings = data.settings[0] || {};
 
   const value = {
-    user, login, logout, changePassword,
+    user, booting, login, logout, changePassword,
     theme, setTheme,
     toasts, pushToast,
     data, reload, insert, update, remove,
