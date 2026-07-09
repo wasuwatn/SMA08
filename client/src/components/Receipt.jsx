@@ -65,6 +65,17 @@ function SaleBody({ data }) {
           <div className="rc-row"><span>Change</span><span>{money(data.change)}</span></div>
         </>
       )}
+      {data.claimCode && data.claimQrUrl && (
+        <>
+          <div className="rc-hr" />
+          <div className="rc-center rc-bold">สะสม {data.claimPoints} แต้ม</div>
+          <div className="rc-center" style={{ margin: '4px 0' }}>
+            <img src={data.claimQrUrl} alt="Claim points QR" style={{ width: '32mm', height: '32mm' }} />
+          </div>
+          <div className="rc-center rc-bold" style={{ fontSize: 14, letterSpacing: 2 }}>{data.claimCode}</div>
+          <div className="rc-center rc-small">แสกน QR หรือกรอกรหัสที่ customer.html เพื่อรับแต้ม</div>
+        </>
+      )}
     </>
   );
 }

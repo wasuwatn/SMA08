@@ -114,6 +114,8 @@ export default function CustomerPortal() {
   const [regDob, setRegDob] = useState('');
   const [busy, setBusy] = useState(false);
   const [claimMsg, setClaimMsg] = useState(null); // { type: 'success'|'error', text }
+  const [claimCodeInput, setClaimCodeInput] = useState('');
+  const [claimBusy, setClaimBusy] = useState(false); // separate from `busy` (redeem/register) so the two forms don't disable each other
   const [redeem, setRedeem] = useState(null);    // { code, expires_at, max_free_value }
   const [qrUrl, setQrUrl] = useState('');
   const [tab, setTab] = useState('orders');      // orders | coupons | points
@@ -254,6 +256,35 @@ export default function CustomerPortal() {
 
   const closeRedeem = () => { setRedeem(null); setQrUrl(''); };
 
+  // Manual entry of a receipt claim code (the QR alternative — same endpoint
+  // as the shop-issued link claim above, the server tells the two apart by
+  // `kind`). Normalizes case client-side since the printed code is uppercase.
+  const submitClaimCode = async (e) => {
+    e.preventDefault();
+    const code = claimCodeInput.trim().toUpperCase();
+    if (!code) return;
+    setClaimBusy(true);
+    setClaimMsg(null);
+    try {
+      const r = await customerApi.claimPoints(code);
+      setClaimMsg({
+        type: 'success',
+        text: r.alreadyClaimed ? `รหัสนี้รับไปแล้ว (+${r.points} แต้ม)` : `รับ ${r.points} แต้มเรียบร้อย! 🎉`
+      });
+      setClaimCodeInput('');
+      await loadMe();
+    } catch (e2) {
+      setClaimMsg({
+        type: 'error',
+        text: e2.status === 404 ? 'ไม่พบรหัสนี้ กรุณาตรวจสอบอีกครั้ง'
+          : e2.status === 409 ? 'รหัสนี้ถูกใช้ไปแล้ว'
+          : (e2.message || 'รับแต้มไม่สำเร็จ กรุณาลองใหม่')
+      });
+    } finally {
+      setClaimBusy(false);
+    }
+  };
+
   // Close the QR modal with the Escape key (escape-routes).
   useEffect(() => {
     if (!redeem) return;
@@ -367,6 +398,18 @@ export default function CustomerPortal() {
           {claimMsg.type === 'success' && <GiftIcon />}{claimMsg.text}
         </div>
       )}
+
+      <form className="cp-claim-card" onSubmit={submitClaimCode} aria-label="กรอกรหัสรับแต้มจากใบเสร็จ">
+        <h3>มีรหัสจากใบเสร็จ?</h3>
+        <div className="cp-claim-row">
+          <input className="cp-input" value={claimCodeInput} maxLength={6} placeholder="เช่น A1B2C3"
+            autoCapitalize="characters" autoCorrect="off" spellCheck={false}
+            onChange={(e) => setClaimCodeInput(e.target.value.toUpperCase())} />
+          <button className="cp-claim-btn" type="submit" disabled={claimBusy || !claimCodeInput.trim()}>
+            {claimBusy ? '…' : 'รับแต้ม'}
+          </button>
+        </div>
+      </form>
 
       {pointsPerFree > 0 ? (
         <section className="cp-card" aria-label={`บัตรสะสมแต้ม ${inCycle} จาก ${buyQty} แต้ม`}>

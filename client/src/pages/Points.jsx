@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useData } from '../lib/data.jsx';
 import { api } from '../lib/api.js';
+import { claimUrl } from '../lib/helpers.js';
 
 // Shop-issued point links: pick an amount, create a single-use claim link and
 // send it to the customer over LINE chat. The customer opens it in the rewards
@@ -8,21 +9,6 @@ import { api } from '../lib/api.js';
 // Links never expire; unclaimed ones can be voided below.
 const POINT_CHOICES = Array.from({ length: 15 }, (_, i) => i + 1); // 1-15
 const CUSTOM = 'custom';
-
-// Always route through liff.line.me when a LIFF ID is configured: LINE
-// resolves that URL straight to the LIFF app's registered Endpoint URL and
-// handles login itself, so it works regardless of which raw domain
-// customer.html is actually served from. Opening the raw domain URL directly
-// (customer.html?claim=...) instead makes liff.login()'s redirect_uri include
-// the query string, which LINE's login rejects with a 400 on some LIFF app
-// configs — liff.line.me sidesteps that entirely.
-// VITE_PORTAL_BASE + raw domain is only a fallback for local dev / setups
-// with no LIFF ID yet (VITE_DEV_LINE_USER testing).
-const claimUrl = (token) => {
-  const liffId = import.meta.env.VITE_LIFF_ID;
-  if (liffId) return `https://liff.line.me/${liffId}?claim=${token}`;
-  return `${(import.meta.env.VITE_PORTAL_BASE || window.location.origin).replace(/\/$/, '')}/customer.html?claim=${token}`;
-};
 
 const fmtTs = (v) => (v ? String(v).replace('T', ' ').slice(0, 16) : '');
 

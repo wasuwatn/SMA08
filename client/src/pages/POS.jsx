@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import QRCode from 'qrcode';
 import { useData } from '../lib/data.jsx';
 import { api } from '../lib/api.js';
-import { money, today, computeRequirements, computeCupCost } from '../lib/helpers.js';
+import { money, today, computeRequirements, computeCupCost, claimUrl } from '../lib/helpers.js';
 import { promptpayPayload } from '../lib/promptpay.js';
 import Receipt from '../components/Receipt.jsx';
 import Modal from '../components/Modal.jsx';
@@ -546,6 +546,19 @@ export default function POS() {
         if (res?.queued) pushToast(`Offline — ${cupCount} cup(s) for ${buyer} queued, will sync when online.`, 'info');
         if (Array.isArray(res) && res[0]?.order_no) {
           setLastReceipt(r => (r ? { ...r, orderLabel: res[0].order_no } : r));
+        }
+        // Additive loyalty QR: the checkout response carries a one-time claim
+        // code (see runCheckout in server/index.js) whenever the order earned
+        // points — render its QR now so it's ready by the time the cashier
+        // hits "Print last receipt".
+        if (Array.isArray(res) && res[0]?.claim_code) {
+          const code = res[0].claim_code;
+          const points = res[0].claim_points;
+          QRCode.toDataURL(claimUrl(code), { width: 240, margin: 1 })
+            .then(qrUrl => {
+              setLastReceipt(r => (r ? { ...r, claimCode: code, claimPoints: points, claimQrUrl: qrUrl } : r));
+            })
+            .catch(() => {});
         }
         if (!res?.queued) refreshRecentSales(); // reflect it in Sales History / shift totals right away
       })
