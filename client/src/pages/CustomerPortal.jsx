@@ -318,12 +318,16 @@ export default function CustomerPortal() {
   };
 
   // Scans the same QR the receipt prints, via LINE's native scanner
-  // (liff.scanCodeV2) — only available inside the LINE app's in-app browser,
-  // never in a plain mobile browser tab. Cancelling the scanner resolves with
-  // an empty value rather than rejecting, so that case is just a silent no-op.
+  // (liff.scanCodeV2) — only works inside the LINE app's in-app browser,
+  // never in a plain mobile browser tab. Gate on isInClient() rather than
+  // isApiAvailable('scanCodeV2'): the latter has been observed to report
+  // false-negatives (e.g. when the page wasn't launched through the exact
+  // liff.line.me link) even when the call itself would succeed — so just
+  // attempt the real call and surface whatever error it actually throws
+  // instead of pre-blocking on a check that can lie.
   const scanQr = async () => {
     const liff = window.liff;
-    if (!liff || !liff.isApiAvailable?.('scanCodeV2')) {
+    if (!liff || !liff.isInClient?.()) {
       setClaimMsg({ type: 'error', text: 'สแกน QR ได้เฉพาะเมื่อเปิดหน้านี้ผ่านแอป LINE เท่านั้น' });
       return;
     }
@@ -333,7 +337,7 @@ export default function CustomerPortal() {
       if (!raw.trim()) return; // user cancelled the scanner
       await doClaim(extractClaimToken(raw).trim().toUpperCase());
     } catch (e) {
-      setClaimMsg({ type: 'error', text: e.message || 'เปิดกล้องสแกน QR ไม่สำเร็จ' });
+      setClaimMsg({ type: 'error', text: `เปิดกล้องสแกน QR ไม่สำเร็จ: ${e.message || e}` });
     }
   };
 
