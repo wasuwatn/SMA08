@@ -684,6 +684,31 @@ app.get('/api/redemption/:code', async (req, res) => {
   }
 });
 
+// Mark a self-redeem code as used directly, without attaching it to a
+// checkout/order (the mobile POS "coupons" screen — staff just hands over
+// the free cup and taps this instead of ringing it through the cart). Same
+// pending/expiry guard as the lookup above; the conditional UPDATE closes
+// the same race two cashiers tapping the same code at once would otherwise hit.
+app.post('/api/redemption/:code/use', async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM redemptions WHERE code = $1 AND status = 'pending' ORDER BY id DESC LIMIT 1", [req.params.code]);
+    const r = rows[0];
+    if (!r) return res.status(404).json({ error: 'Code not found or already used.' });
+    if (r.expires_at && new Date(r.expires_at).getTime() < Date.now()) {
+      await updateRow('redemptions', r.id, { status: 'expired' });
+      return res.status(404).json({ error: 'Code expired.' });
+    }
+    const { rowCount } = await pool.query(
+      "UPDATE redemptions SET status = 'used', used_at = $2 WHERE id = $1 AND status = 'pending'",
+      [r.id, new Date().toISOString()]
+    );
+    if (!rowCount) return res.status(409).json({ error: 'Code was just used by someone else.' });
+    res.json({ code: r.code, customer_name: r.customer_name });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
 // ---- Checkout (transactional stock deduction) ----------------------------
 // body: { sales:[{...}], requirements:[{material_id, qty, note}], date }
 // One row per cup is inserted; stock requirements are aggregated for the order.
