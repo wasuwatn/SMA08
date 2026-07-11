@@ -345,29 +345,52 @@ app.post('/api/customer/redeem', requireCustomer, async (req, res) => {
 // redemption burn) means only the first customer wins; a retry by the SAME
 // customer is answered idempotently so LIFF page reloads / double-taps
 // (or the customer.html manual-entry form) don't surface errors.
+// A 'receipt' code also carries the POS order_no it was printed on, so on a
+// successful claim we attribute that order's still-unlinked (walk-in) sale
+// rows to the claiming customer — the purchase then shows up in their order
+// history alongside the points. Ledger update + sale-row linking run in one
+// transaction so points and history land together.
 app.post('/api/customer/claim-points', requireCustomer, async (req, res) => {
   const token = String(req.body?.token || '').trim();
   if (!token) return res.status(400).json({ error: 'Token is required.' });
+  const customerId = req.customer.customer_id;
   try {
-    const customer = await getRow('customers', req.customer.customer_id);
+    const customer = await getRow('customers', customerId);
     if (!customer) return res.status(404).json({ error: 'Customer not found.' });
-    const { rows, rowCount } = await pool.query(
-      `UPDATE point_ledger SET status = 'claimed', customer_id = $2, claimed_at = $3
-       WHERE token = $1 AND kind IN ('link', 'receipt') AND status = 'pending' RETURNING points`,
-      [token, customer.id, new Date().toISOString()]
-    );
-    if (rowCount) {
-      await logActivity('customer', 'POINTS CLAIM', `${customer.name} (#${customer.id}) +${rows[0].points}`);
-      return res.json({ points: rows[0].points, balance: await pointsBalanceFor(customer.id) });
+    const result = await withTransaction(async (client) => {
+      const { rows, rowCount } = await client.query(
+        `UPDATE point_ledger SET status = 'claimed', customer_id = $2, claimed_at = $3
+         WHERE token = $1 AND kind IN ('link', 'receipt') AND status = 'pending'
+         RETURNING points, kind, order_no`,
+        [token, customerId, new Date().toISOString()]
+      );
+      if (rowCount) {
+        const { points, kind, order_no } = rows[0];
+        // Guard `customer_id IS NULL` so we never re-attribute an order a
+        // cashier already linked to someone else — and it makes re-claims /
+        // concurrent double-taps idempotent (they link 0 rows). A 'link'
+        // code has no order_no and skips this entirely.
+        if (kind === 'receipt' && order_no) {
+          await client.query(
+            'UPDATE salefront SET customer_id = $1 WHERE order_no = $2 AND customer_id IS NULL',
+            [customerId, order_no]
+          );
+        }
+        return { claimed: true, points };
+      }
+      const { rows: [existing] } = await client.query(
+        "SELECT customer_id, points FROM point_ledger WHERE token = $1 AND kind IN ('link', 'receipt') LIMIT 1", [token]
+      );
+      if (!existing) return { error: 'NOT_FOUND' };
+      if (existing.customer_id === customerId) return { alreadyClaimed: true, points: existing.points };
+      return { error: 'CLAIMED_BY_OTHER' };
+    });
+    if (result.error === 'NOT_FOUND') return res.status(404).json({ error: 'Code not found.' });
+    if (result.error === 'CLAIMED_BY_OTHER') return res.status(409).json({ error: 'This code has already been claimed.' });
+    if (result.claimed) {
+      await logActivity('customer', 'POINTS CLAIM', `${customer.name} (#${customerId}) +${result.points}`);
     }
-    const { rows: [existing] } = await pool.query(
-      "SELECT customer_id, points FROM point_ledger WHERE token = $1 AND kind IN ('link', 'receipt') LIMIT 1", [token]
-    );
-    if (!existing) return res.status(404).json({ error: 'Code not found.' });
-    if (existing.customer_id === customer.id) {
-      return res.json({ alreadyClaimed: true, points: existing.points, balance: await pointsBalanceFor(customer.id) });
-    }
-    res.status(409).json({ error: 'This code has already been claimed.' });
+    res.json({ ...(result.alreadyClaimed ? { alreadyClaimed: true } : {}), points: result.points, balance: await pointsBalanceFor(customerId) });
   } catch (e) {
     fail(res, e);
   }
