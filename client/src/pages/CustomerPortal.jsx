@@ -68,6 +68,12 @@ const StarIcon = () => (
     <path d="m12 3 2.7 5.6 6.1.8-4.5 4.3 1.1 6-5.4-2.9-5.4 2.9 1.1-6L3.2 9.4l6.1-.8L12 3Z" />
   </svg>
 );
+const ScanIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" />
+    <path d="M4 12h16" />
+  </svg>
+);
 
 const COUPON_LABEL = { pending: 'รอใช้งาน', used: 'ใช้แล้ว', expired: 'หมดอายุ' };
 const POINTS_LABEL = { link: 'รับแต้มจากร้าน', crm: 'รับแต้มจากร้าน', spend: 'แลกแก้วฟรี' };
@@ -101,6 +107,28 @@ function stashClaimToken() {
     }
     if (token) sessionStorage.setItem(CLAIM_KEY, token);
   } catch { /* malformed URL — nothing to claim */ }
+}
+
+// The receipt QR encodes a full liff.line.me URL (claimUrl() in
+// client/src/lib/helpers.js), same shape stashClaimToken() above unwraps for
+// a scanned-then-relaunched link. In-app scanning (liff.scanCodeV2) hands us
+// the raw string directly instead of a relaunch, so pull the token out of it
+// the same way rather than opening/redirecting anywhere.
+function extractClaimToken(raw) {
+  const value = String(raw || '').trim();
+  try {
+    const url = new URL(value);
+    const direct = url.searchParams.get('claim');
+    if (direct) return direct;
+    const liffState = url.searchParams.get('liff.state');
+    if (liffState) {
+      const decoded = decodeURIComponent(liffState);
+      const query = decoded.includes('?') ? decoded.slice(decoded.indexOf('?') + 1) : decoded.replace(/^\//, '');
+      const wrapped = new URLSearchParams(query).get('claim');
+      if (wrapped) return wrapped;
+    }
+  } catch { /* not a URL — the QR held the bare code, use it as-is */ }
+  return value;
 }
 
 export default function CustomerPortal() {
@@ -256,12 +284,9 @@ export default function CustomerPortal() {
 
   const closeRedeem = () => { setRedeem(null); setQrUrl(''); };
 
-  // Manual entry of a receipt claim code (the QR alternative — same endpoint
-  // as the shop-issued link claim above, the server tells the two apart by
-  // `kind`). Normalizes case client-side since the printed code is uppercase.
-  const submitClaimCode = async (e) => {
-    e.preventDefault();
-    const code = claimCodeInput.trim().toUpperCase();
+  // Shared by manual code entry and QR scanning below — same endpoint as the
+  // shop-issued link claim above, the server tells the two apart by `kind`.
+  const doClaim = async (code) => {
     if (!code) return;
     setClaimBusy(true);
     setClaimMsg(null);
@@ -282,6 +307,33 @@ export default function CustomerPortal() {
       });
     } finally {
       setClaimBusy(false);
+    }
+  };
+
+  // Manual entry of a receipt claim code. Normalizes case client-side since
+  // the printed code is uppercase.
+  const submitClaimCode = async (e) => {
+    e.preventDefault();
+    await doClaim(claimCodeInput.trim().toUpperCase());
+  };
+
+  // Scans the same QR the receipt prints, via LINE's native scanner
+  // (liff.scanCodeV2) — only available inside the LINE app's in-app browser,
+  // never in a plain mobile browser tab. Cancelling the scanner resolves with
+  // an empty value rather than rejecting, so that case is just a silent no-op.
+  const scanQr = async () => {
+    const liff = window.liff;
+    if (!liff || !liff.isApiAvailable?.('scanCodeV2')) {
+      setClaimMsg({ type: 'error', text: 'สแกน QR ได้เฉพาะเมื่อเปิดหน้านี้ผ่านแอป LINE เท่านั้น' });
+      return;
+    }
+    try {
+      const result = await liff.scanCodeV2();
+      const raw = (result && result.value) || '';
+      if (!raw.trim()) return; // user cancelled the scanner
+      await doClaim(extractClaimToken(raw).trim().toUpperCase());
+    } catch (e) {
+      setClaimMsg({ type: 'error', text: e.message || 'เปิดกล้องสแกน QR ไม่สำเร็จ' });
     }
   };
 
@@ -402,6 +454,10 @@ export default function CustomerPortal() {
       <form className="cp-claim-card" onSubmit={submitClaimCode} aria-label="กรอกรหัสรับแต้มจากใบเสร็จ">
         <h3>มีรหัสจากใบเสร็จ?</h3>
         <div className="cp-claim-row">
+          <button type="button" className="cp-scan-btn" onClick={scanQr} disabled={claimBusy}
+            aria-label="สแกน QR จากใบเสร็จ">
+            <ScanIcon />
+          </button>
           <input className="cp-input" value={claimCodeInput} maxLength={6} placeholder="เช่น A1B2C3"
             autoCapitalize="characters" autoCorrect="off" spellCheck={false}
             onChange={(e) => setClaimCodeInput(e.target.value.toUpperCase())} />
