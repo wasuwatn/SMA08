@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import QRCode from 'qrcode';
+import jsQR from 'jsqr';
 import { customerApi, setToken } from '../lib/customerApi.js';
 import { money } from '../lib/helpers.js';
 
@@ -68,10 +69,11 @@ const StarIcon = () => (
     <path d="m12 3 2.7 5.6 6.1.8-4.5 4.3 1.1 6-5.4-2.9-5.4 2.9 1.1-6L3.2 9.4l6.1-.8L12 3Z" />
   </svg>
 );
-const ScanIcon = () => (
+const GalleryIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" />
-    <path d="M4 12h16" />
+    <rect x="3" y="4" width="18" height="16" rx="2.5" />
+    <circle cx="8.5" cy="9.5" r="1.5" />
+    <path d="m4 17 5-5 4 4 3-3 4 4" />
   </svg>
 );
 
@@ -144,6 +146,8 @@ export default function CustomerPortal() {
   const [claimMsg, setClaimMsg] = useState(null); // { type: 'success'|'error', text }
   const [claimCodeInput, setClaimCodeInput] = useState('');
   const [claimBusy, setClaimBusy] = useState(false); // separate from `busy` (redeem/register) so the two forms don't disable each other
+  const [scanBusy, setScanBusy] = useState(false); // decoding a picked receipt photo
+  const fileInputRef = useRef(null);
   const [redeem, setRedeem] = useState(null);    // { code, expires_at, max_free_value }
   const [qrUrl, setQrUrl] = useState('');
   const [tab, setTab] = useState('orders');      // orders | coupons | points
@@ -317,27 +321,64 @@ export default function CustomerPortal() {
     await doClaim(claimCodeInput.trim().toUpperCase());
   };
 
-  // Scans the same QR the receipt prints, via LINE's native scanner
-  // (liff.scanCodeV2) — only works inside the LINE app's in-app browser,
-  // never in a plain mobile browser tab. Gate on isInClient() rather than
-  // isApiAvailable('scanCodeV2'): the latter has been observed to report
-  // false-negatives (e.g. when the page wasn't launched through the exact
-  // liff.line.me link) even when the call itself would succeed — so just
-  // attempt the real call and surface whatever error it actually throws
-  // instead of pre-blocking on a check that can lie.
-  const scanQr = async () => {
-    const liff = window.liff;
-    if (!liff || !liff.isInClient?.()) {
-      setClaimMsg({ type: 'error', text: 'สแกน QR ได้เฉพาะเมื่อเปิดหน้านี้ผ่านแอป LINE เท่านั้น' });
-      return;
-    }
+  // Decode a QR straight out of an image file (a saved photo/screenshot of
+  // the receipt) instead of a live camera scan — works in any browser, not
+  // just inside LINE's in-app WebView, and doesn't depend on LIFF's native
+  // scanner APIs at all.
+  const decodeQrFromFile = (file) => new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      // Cap the decode canvas so a full-resolution phone photo doesn't choke
+      // the browser — a receipt's QR block is a small fraction of the frame,
+      // so downscaling the long edge to ~1200px still leaves plenty of
+      // resolution to decode reliably.
+      const MAX_EDGE = 1200;
+      const scale = Math.min(1, MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.max(1, Math.round(img.naturalWidth * scale));
+      const h = Math.max(1, Math.round(img.naturalHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      let imageData;
+      try {
+        imageData = ctx.getImageData(0, 0, w, h);
+      } catch {
+        reject(new Error('อ่านรูปนี้ไม่ได้'));
+        return;
+      }
+      const result = jsQR(imageData.data, w, h);
+      if (!result || !result.data) {
+        reject(new Error('ไม่พบ QR code ในรูปนี้ กรุณาลองรูปอื่น หรือกรอกรหัสด้วยตนเอง'));
+        return;
+      }
+      resolve(result.data);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('เปิดรูปนี้ไม่ได้'));
+    };
+    img.src = objectUrl;
+  });
+
+  const pickReceiptImage = () => fileInputRef.current?.click();
+
+  const handleReceiptImage = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = ''; // reset so choosing the same file again still fires onChange
+    if (!file) return;
+    setScanBusy(true);
+    setClaimMsg(null);
     try {
-      const result = await liff.scanCodeV2();
-      const raw = (result && result.value) || '';
-      if (!raw.trim()) return; // user cancelled the scanner
+      const raw = await decodeQrFromFile(file);
       await doClaim(extractClaimToken(raw).trim().toUpperCase());
-    } catch (e) {
-      setClaimMsg({ type: 'error', text: `เปิดกล้องสแกน QR ไม่สำเร็จ: ${e.message || e}` });
+    } catch (err) {
+      setClaimMsg({ type: 'error', text: err.message || 'อ่าน QR จากรูปไม่สำเร็จ' });
+    } finally {
+      setScanBusy(false);
     }
   };
 
@@ -458,9 +499,11 @@ export default function CustomerPortal() {
       <form className="cp-claim-card" onSubmit={submitClaimCode} aria-label="กรอกรหัสรับแต้มจากใบเสร็จ">
         <h3>มีรหัสจากใบเสร็จ?</h3>
         <div className="cp-claim-row">
-          <button type="button" className="cp-scan-btn" onClick={scanQr} disabled={claimBusy}
-            aria-label="สแกน QR จากใบเสร็จ">
-            <ScanIcon />
+          <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+            onChange={handleReceiptImage} />
+          <button type="button" className="cp-scan-btn" onClick={pickReceiptImage} disabled={claimBusy || scanBusy}
+            aria-label="แนบรูปใบเสร็จเพื่ออ่าน QR">
+            {scanBusy ? '…' : <GalleryIcon />}
           </button>
           <input className="cp-input" value={claimCodeInput} maxLength={6} placeholder="เช่น A1B2C3"
             autoCapitalize="characters" autoCorrect="off" spellCheck={false}
@@ -469,6 +512,7 @@ export default function CustomerPortal() {
             {claimBusy ? '…' : 'รับแต้ม'}
           </button>
         </div>
+        <p className="cp-claim-hint">หรือแนบรูปใบเสร็จที่ถ่าย/เซฟไว้ ให้ระบบอ่าน QR ให้อัตโนมัติ</p>
       </form>
 
       {pointsPerFree > 0 ? (

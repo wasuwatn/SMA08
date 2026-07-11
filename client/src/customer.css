@@ -148,6 +148,7 @@ h1, h2, h3, .cp-display {
 }
 .cp-scan-btn:active { border-color: var(--primary); }
 .cp-scan-btn svg { width: 22px; height: 22px; }
+.cp-claim-hint { margin: 8px 0 0; font-size: 12px; color: var(--text-secondary); }
 
 /* ---- Stats row ------------------------------------------------------------ */
 .cp-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
