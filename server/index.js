@@ -686,24 +686,51 @@ app.get('/api/redemption/:code', async (req, res) => {
 
 // Mark a self-redeem code as used directly, without attaching it to a
 // checkout/order (the mobile POS "coupons" screen — staff just hands over
-// the free cup and taps this instead of ringing it through the cart). Same
-// pending/expiry guard as the lookup above; the conditional UPDATE closes
-// the same race two cashiers tapping the same code at once would otherwise hit.
+// the free cup and taps this instead of ringing it through the cart). Still
+// has to charge the same points a checkout-burned redemption would, or the
+// customer's balance never drops and they can mint free cups forever — the
+// advisory lock + balance check below mirror runCheckout's pointFreeCups
+// block exactly, just without an order_no attached to the ledger row.
 app.post('/api/redemption/:code/use', async (req, res) => {
   try {
-    const { rows } = await pool.query("SELECT * FROM redemptions WHERE code = $1 AND status = 'pending' ORDER BY id DESC LIMIT 1", [req.params.code]);
-    const r = rows[0];
-    if (!r) return res.status(404).json({ error: 'Code not found or already used.' });
-    if (r.expires_at && new Date(r.expires_at).getTime() < Date.now()) {
-      await updateRow('redemptions', r.id, { status: 'expired' });
-      return res.status(404).json({ error: 'Code expired.' });
-    }
-    const { rowCount } = await pool.query(
-      "UPDATE redemptions SET status = 'used', used_at = $2 WHERE id = $1 AND status = 'pending'",
-      [r.id, new Date().toISOString()]
-    );
-    if (!rowCount) return res.status(409).json({ error: 'Code was just used by someone else.' });
-    res.json({ code: r.code, customer_name: r.customer_name });
+    const result = await withTransaction(async (client) => {
+      const { rows } = await client.query(
+        "SELECT * FROM redemptions WHERE code = $1 AND status = 'pending' ORDER BY id DESC LIMIT 1",
+        [req.params.code]
+      );
+      const r = rows[0];
+      if (!r) return { error: 'NOT_FOUND' };
+      if (r.expires_at && new Date(r.expires_at).getTime() < Date.now()) {
+        await updateRow('redemptions', r.id, { status: 'expired' }, client);
+        return { error: 'EXPIRED' };
+      }
+      if (r.customer_id == null) return { error: 'NO_CUSTOMER' };
+      const promotion = await activePointsPromotion();
+      const pointsPerFree = promotion ? Number(promotion.buy_qty) || 0 : 0;
+      if (pointsPerFree > 0) {
+        await client.query('SELECT pg_advisory_xact_lock($1, $2)', [POINTS_LOCK_KEY, r.customer_id]);
+        const balance = await pointsBalanceFor(r.customer_id, client);
+        if (balance < pointsPerFree) return { error: 'INSUFFICIENT_POINTS' };
+        await insertRow('point_ledger', {
+          customer_id: r.customer_id, points: -pointsPerFree, kind: 'spend', status: 'claimed',
+          note: 'Free cup redemption (coupon marked used at POS)',
+          created_by: actor(req), created_at: new Date().toISOString(), claimed_at: new Date().toISOString(),
+          order_no: null
+        }, client);
+      }
+      const { rowCount } = await client.query(
+        "UPDATE redemptions SET status = 'used', used_at = $2 WHERE id = $1 AND status = 'pending'",
+        [r.id, new Date().toISOString()]
+      );
+      if (!rowCount) return { error: 'RACE_LOST' };
+      return { code: r.code, customer_name: r.customer_name };
+    });
+    if (result.error === 'NOT_FOUND') return res.status(404).json({ error: 'Code not found or already used.' });
+    if (result.error === 'EXPIRED') return res.status(404).json({ error: 'Code expired.' });
+    if (result.error === 'NO_CUSTOMER') return res.status(400).json({ error: 'Code has no linked customer.' });
+    if (result.error === 'INSUFFICIENT_POINTS') return res.status(409).json({ error: 'Customer no longer has enough points for this coupon.' });
+    if (result.error === 'RACE_LOST') return res.status(409).json({ error: 'Code was just used by someone else.' });
+    res.json(result);
   } catch (e) {
     fail(res, e);
   }
