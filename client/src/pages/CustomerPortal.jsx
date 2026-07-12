@@ -485,32 +485,6 @@ export default function CustomerPortal() {
         </div>
       </header>
 
-      {claimMsg && (
-        <div className={claimMsg.type === 'success' ? 'cp-free-pill' : 'cp-error-box'} role="alert"
-          style={{ margin: '0 0 4px' }}>
-          {claimMsg.type === 'success' && <GiftIcon />}{claimMsg.text}
-        </div>
-      )}
-
-      <form className="cp-claim-card" onSubmit={submitClaimCode} aria-label="กรอกรหัสรับแต้มจากใบเสร็จ">
-        <h3>มีรหัสจากใบเสร็จ?</h3>
-        <div className="cp-claim-row">
-          <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }}
-            onChange={handleReceiptImage} />
-          <button type="button" className="cp-scan-btn" onClick={pickReceiptImage} disabled={claimBusy || scanBusy}
-            aria-label="แนบรูปใบเสร็จเพื่ออ่าน QR">
-            {scanBusy ? '…' : <GalleryIcon />}
-          </button>
-          <input className="cp-input" value={claimCodeInput} maxLength={6} placeholder="เช่น A1B2C3"
-            autoCapitalize="characters" autoCorrect="off" spellCheck={false}
-            onChange={(e) => setClaimCodeInput(e.target.value.toUpperCase())} />
-          <button className="cp-claim-btn" type="submit" disabled={claimBusy || !claimCodeInput.trim()}>
-            {claimBusy ? '…' : 'รับแต้ม'}
-          </button>
-        </div>
-        <p className="cp-claim-hint">หรือแนบรูปใบเสร็จที่ถ่าย/เซฟไว้ ให้ระบบอ่าน QR ให้อัตโนมัติ</p>
-      </form>
-
       {pointsPerFree > 0 ? (
         <section className="cp-card" aria-label={`บัตรสะสมแต้ม ${inCycle} จาก ${buyQty} แต้ม`}>
           <Sparkle className="d1" />
@@ -556,6 +530,32 @@ export default function CustomerPortal() {
         <div className="cp-stat"><div className="label">แลกฟรีได้</div><div className="value good">{pointsAvailable}</div></div>
         <div className="cp-stat"><div className="label">แต้มสะสม</div><div className="value">{pointsBalance}</div></div>
       </section>
+
+      {claimMsg && (
+        <div className={claimMsg.type === 'success' ? 'cp-free-pill' : 'cp-error-box'} role="alert"
+          style={{ margin: '0 0 4px' }}>
+          {claimMsg.type === 'success' && <GiftIcon />}{claimMsg.text}
+        </div>
+      )}
+
+      <form className="cp-claim-card" onSubmit={submitClaimCode} aria-label="กรอกรหัสรับแต้มจากใบเสร็จ">
+        <h3>มีรหัสจากใบเสร็จ?</h3>
+        <div className="cp-claim-row">
+          <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+            onChange={handleReceiptImage} />
+          <button type="button" className="cp-scan-btn" onClick={pickReceiptImage} disabled={claimBusy || scanBusy}
+            aria-label="แนบรูปใบเสร็จเพื่ออ่าน QR">
+            {scanBusy ? '…' : <GalleryIcon />}
+          </button>
+          <input className="cp-input" value={claimCodeInput} maxLength={6} placeholder="เช่น A1B2C3"
+            autoCapitalize="characters" autoCorrect="off" spellCheck={false}
+            onChange={(e) => setClaimCodeInput(e.target.value.toUpperCase())} />
+          <button className="cp-claim-btn" type="submit" disabled={claimBusy || !claimCodeInput.trim()}>
+            {claimBusy ? '…' : 'รับแต้ม'}
+          </button>
+        </div>
+        <p className="cp-claim-hint">หรือแนบรูปใบเสร็จที่ถ่าย/เซฟไว้ ให้ระบบอ่าน QR ให้อัตโนมัติ</p>
+      </form>
 
       <div className="cp-tabs" role="tablist" aria-label="ประวัติ">
         <button className="cp-tab" role="tab" aria-selected={tab === 'orders'} onClick={() => setTab('orders')}>
