@@ -21,9 +21,9 @@ h1, h2, h3, .cp-display {
   font-size: 16px; /* ≥16px avoids iOS auto-zoom */
 }
 
-/* ---- Header: shop brand ------------------------------------------------- */
-.cp-header { display: flex; align-items: center; justify-content: space-between; }
-.cp-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* ---- Header: greeting (left) + shop brand (right) ------------------------ */
+.cp-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.cp-brand { flex-shrink: 0; text-align: right; }
 .cp-logo {
   width: 42px; height: 42px; border-radius: 13px; flex-shrink: 0;
   background: linear-gradient(150deg, var(--primary), var(--secondary));
@@ -35,7 +35,7 @@ h1, h2, h3, .cp-display {
 .cp-shop-sub { font-size: 11.5px; color: var(--text-muted); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
 
 /* ---- Greeting ------------------------------------------------------------ */
-.cp-greeting { display: flex; align-items: center; gap: 12px; padding: 2px 2px 0; }
+.cp-greeting { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .cp-avatar {
   width: 46px; height: 46px; border-radius: 50%; flex-shrink: 0;
   background: var(--accent-soft); color: var(--accent-ink);

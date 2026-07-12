@@ -472,22 +472,18 @@ export default function CustomerPortal() {
   return (
     <div className="cp-app">
       <header className="cp-header">
-        <div className="cp-brand">
-          <div className="cp-logo" aria-hidden="true">{shopName.trim().charAt(0).toUpperCase() || 'K'}</div>
+        <section className="cp-greeting">
+          <div className="cp-avatar" aria-hidden="true">{(customer.name || '?').trim().charAt(0)}</div>
           <div>
-            <div className="cp-shop-name">{shopName}</div>
-            <div className="cp-shop-sub">Rewards</div>
+            <div className="cp-hello">สวัสดี,</div>
+            <h1 className="cp-name">{customer.name}</h1>
           </div>
+        </section>
+        <div className="cp-brand">
+          <div className="cp-shop-name">{shopName}</div>
+          <div className="cp-shop-sub">Rewards</div>
         </div>
       </header>
-
-      <section className="cp-greeting">
-        <div className="cp-avatar" aria-hidden="true">{(customer.name || '?').trim().charAt(0)}</div>
-        <div>
-          <div className="cp-hello">สวัสดี,</div>
-          <h1 className="cp-name">{customer.name}</h1>
-        </div>
-      </section>
 
       {claimMsg && (
         <div className={claimMsg.type === 'success' ? 'cp-free-pill' : 'cp-error-box'} role="alert"
