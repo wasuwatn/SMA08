@@ -19,17 +19,32 @@ const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); retur
 
 const PAY_METHODS = ['Cash', 'PromptPay', 'Transfer'];
 
-const CONTAINERS = [
+// Fallbacks only for the brief window before the hub's first-boot migration
+// seeds real 'container'/'sweetness' addons rows (see server/db.js) — once
+// seeded, data.addons always has these, and these constants go unused.
+const DEFAULT_CONTAINERS = [
   { value: 'Ice', label: 'Ice', adj: 0 },
   { value: 'Hot', label: 'Hot', adj: 0 },
   { value: 'Bottle', label: 'Bottle', adj: -5 }
 ];
+const DEFAULT_SWEETNESS = ['No Sweet', '25%', '50%', '100%'].map(v => ({ value: v, label: v, adj: 0 }));
 
 export default function POS() {
   const { user, data, settings, pushToast, checkoutPos, reload } = useData();
   const drinks = data.menuname.filter(d => d.status === 'Active');
   const categories = ['All', ...new Set(drinks.map(d => d.category))];
-  const sweetnessLevels = (settings.sweetness_levels || 'No Sweet, 25%, 50%, 100%').split(',').map(s => s.trim());
+  // Container ("Ice"/"Hot"/"Bottle") and Sweetness are both required,
+  // single-select modifiers — same `addons` table as the optional multi-select
+  // extras below, distinguished by `kind` (see server/db.js). Options/prices
+  // are staff-editable there instead of hardcoded or a settings CSV.
+  const containers = useMemo(() => {
+    const rows = data.addons.filter(a => a.kind === 'container');
+    return rows.length ? rows.map(a => ({ value: a.name, label: a.name, adj: Number(a.price_change) || 0 })) : DEFAULT_CONTAINERS;
+  }, [data.addons]);
+  const sweetnessLevels = useMemo(() => {
+    const rows = data.addons.filter(a => a.kind === 'sweetness');
+    return rows.length ? rows.map(a => ({ value: a.name, label: a.name, adj: Number(a.price_change) || 0 })) : DEFAULT_SWEETNESS;
+  }, [data.addons]);
 
   const [cat, setCat] = useState('All');
 
@@ -54,8 +69,8 @@ export default function POS() {
   const [selected, setSelected] = useState(null); // drink selected to customize
   const [qty, setQty] = useState(1);
   const [childId, setChildId] = useState('');
-  const [sweet, setSweet] = useState(sweetnessLevels[0]);
-  const [container, setContainer] = useState('Ice');
+  const [sweet, setSweet] = useState(sweetnessLevels[0]?.value || '');
+  const [container, setContainer] = useState(containers[0]?.value || 'Ice');
   const [addonRows, setAddonRows] = useState([]); // Selected addon names
   const [useFreeRedemption, setUseFreeRedemption] = useState(false);
   const [useComp, setUseComp] = useState(false); // staff comp — no points/customer needed
@@ -101,14 +116,15 @@ export default function POS() {
   // Customizer selections & calculations
   const childItems = selected ? data.childmenu.filter(c => c.menu_name === selected.name) : [];
   const childObj = childItems.find(c => String(c.id) === String(childId));
-  const containerAdj = CONTAINERS.find(c => c.value === container)?.adj || 0;
+  const containerAdj = containers.find(c => c.value === container)?.adj || 0;
+  const sweetAdj = sweetnessLevels.find(s => s.value === sweet)?.adj || 0;
   const addonsPrice = addonRows.reduce((s, name) => {
     const a = data.addons.find(x => x.name === name);
     return s + (a ? Number(a.price_change) : 0);
   }, 0);
   const childPriceChange = childObj ? Number(childObj.price_change) || 0 : 0;
   const base = selected ? Number(selected.front_price) : 0;
-  const singleCup = base + containerAdj + addonsPrice + childPriceChange;
+  const singleCup = base + containerAdj + sweetAdj + addonsPrice + childPriceChange;
   const modalTotal = (useFreeRedemption || useComp) ? 0 : singleCup * qty;
 
   // Points promo (buy_qty = points per free cup, capped at max_free_value)
@@ -256,8 +272,8 @@ export default function POS() {
     setSelected(d);
     const firstChild = data.childmenu.find(c => c.menu_name === d.name);
     setChildId(firstChild ? String(firstChild.id) : '');
-    setSweet(sweetnessLevels[0]);
-    setContainer('Ice');
+    setSweet(sweetnessLevels[0]?.value || '');
+    setContainer(containers[0]?.value || 'Ice');
     setAddonRows([]);
     setQty(1);
     setUseFreeRedemption(false);
@@ -899,9 +915,9 @@ export default function POS() {
       {customizerOpen && selected && (
         <DrinkCustomizerModal
           selected={selected} childItems={childItems} childId={childId} setChildId={setChildId}
-          container={container} setContainer={setContainer} containers={CONTAINERS}
+          container={container} setContainer={setContainer} containers={containers}
           sweetnessLevels={sweetnessLevels} sweet={sweet} setSweet={setSweet}
-          addons={data.addons} addonRows={addonRows} toggleAddon={toggleAddon}
+          addons={data.addons.filter(a => (a.kind || 'extra') === 'extra')} addonRows={addonRows} toggleAddon={toggleAddon}
           promotion={promotion} useFreeRedemption={useFreeRedemption} setUseFreeRedemption={setUseFreeRedemption}
           canRedeemFree={canRedeemFree} freeRemaining={freeRemaining} eligibleForFree={eligibleForFree}
           useComp={useComp} setUseComp={setUseComp}

@@ -129,11 +129,18 @@ export const TABLE_CONFIG = {
     ddl: `CREATE TABLE IF NOT EXISTS matprepbom (
       id TEXT PRIMARY KEY, name TEXT, items TEXT)`
   },
+  // `kind` groups a modifier by role: 'container' (Ice/Hot/Bottle) and
+  // 'sweetness' (0%/25%/... ) are each a required, single-select choice per
+  // cup — POS.jsx reads them the same way it always read the old hardcoded
+  // CONTAINERS array / settings.sweetness_levels CSV, just sourced from here
+  // now so staff can add/edit/remove them like any other modifier. 'extra'
+  // (the default/legacy value) is the original optional, multi-select add-on
+  // list (e.g. "Extra pearls") — unchanged behavior.
   addons: {
     pk: 'id', auto: true,
-    columns: ['id', 'name', 'price_change'],
+    columns: ['id', 'name', 'price_change', 'kind'],
     ddl: `CREATE TABLE IF NOT EXISTS addons (
-      id SERIAL PRIMARY KEY, name TEXT, price_change DOUBLE PRECISION)`
+      id SERIAL PRIMARY KEY, name TEXT, price_change DOUBLE PRECISION, kind TEXT DEFAULT 'extra')`
   },
   // Self-redeem codes minted by a customer in the LINE portal. A staff member
   // enters the code at POS, which marks it 'used' inside the checkout txn. One
@@ -553,6 +560,33 @@ async function migrate() {
   try {
     await pool.query("UPDATE promotions SET type = 'points' WHERE type = 'stamp'");
   } catch { /* ignore */ }
+
+  // Phase-6: addons.kind existing rows predate the column (added as plain
+  // TEXT with no default by the generic loop above) — backfill them to the
+  // 'extra' meaning they always had. Then seed the container/sweetness
+  // modifier rows once, converting the old hardcoded CONTAINERS array and
+  // the settings.sweetness_levels CSV into real addons rows — only if a shop
+  // has none yet, so this never overwrites values staff already edited.
+  try {
+    await pool.query("UPDATE addons SET kind = 'extra' WHERE kind IS NULL");
+    const { rows: [{ c: containerCount }] } = await pool.query("SELECT COUNT(*)::int AS c FROM addons WHERE kind = 'container'");
+    if (containerCount === 0) {
+      for (const [name, price_change] of [['Ice', 0], ['Hot', 0], ['Bottle', -5]]) {
+        await pool.query('INSERT INTO addons (name, price_change, kind) VALUES ($1, $2, $3)', [name, price_change, 'container']);
+      }
+    }
+    const { rows: [{ c: sweetnessCount }] } = await pool.query("SELECT COUNT(*)::int AS c FROM addons WHERE kind = 'sweetness'");
+    if (sweetnessCount === 0) {
+      const { rows: [settingsRow] } = await pool.query('SELECT sweetness_levels FROM settings LIMIT 1');
+      const levels = String(settingsRow?.sweetness_levels || 'No Sweet, 25%, 50%, 100%')
+        .split(',').map(s => s.trim()).filter(Boolean);
+      for (const name of levels) {
+        await pool.query('INSERT INTO addons (name, price_change, kind) VALUES ($1, $2, $3)', [name, 0, 'sweetness']);
+      }
+    }
+  } catch (e) {
+    console.error('addons.kind seed migration failed:', e.message);
+  }
 
   // Phase-4: Supabase flags any table without RLS as "Unrestricted" in its
   // dashboard. That only matters for Supabase's own REST/GraphQL API

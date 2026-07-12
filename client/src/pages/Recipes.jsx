@@ -7,7 +7,8 @@ import Modal from '../components/Modal.jsx';
 const blankMenu = { id: '', name: '', category: '', front_price: 0, delivery_price: 0, status: 'Active' };
 const blankPkg = { id: '', name: '', items: [] };
 const blankMatPrep = { id: '', name: '', items: [] };
-const blankAddon = { name: '', price_change: 0 };
+const blankAddon = { name: '', price_change: 0, kind: 'extra' };
+const ADDON_KIND_LABEL = { extra: 'Extra (optional)', container: 'Container', sweetness: 'Sweetness' };
 
 export default function Recipes() {
   const { data, insert, update, remove, reload, pushToast } = useData();
@@ -141,13 +142,13 @@ export default function Recipes() {
   const saveAddon = async () => {
     const a = addonModal;
     if (!a.name.trim()) return pushToast('Add-on name required.', 'warning');
-    const payload = { name: a.name.trim(), price_change: Number(a.price_change) || 0 };
+    const payload = { name: a.name.trim(), price_change: Number(a.price_change) || 0, kind: a.kind || 'extra' };
     if (a._isNew) await insert('addons', payload);
     else await update('addons', a.id, payload);
     pushToast('Add-on saved.', 'success');
     setAddonModal(null);
   };
-  const editAddon = (a) => setAddonModal({ id: a.id, name: a.name, price_change: a.price_change, _isNew: false });
+  const editAddon = (a) => setAddonModal({ id: a.id, name: a.name, price_change: a.price_change, kind: a.kind || 'extra', _isNew: false });
   const delAddon = async (id) => { await remove('addons', id); pushToast('Add-on removed.', 'success'); };
 
   return (
@@ -292,18 +293,19 @@ export default function Recipes() {
         <div className="bom-cell-body">
           <div className="table-wrap">
             <table className="data">
-              <thead><tr><th>ID</th><th>Name</th><th>Price Change</th><th style={{ width: 1, textAlign: 'right' }}></th></tr></thead>
+              <thead><tr><th>ID</th><th>Name</th><th>Kind</th><th>Price Change</th><th style={{ width: 1, textAlign: 'right' }}></th></tr></thead>
               <tbody>
                 {data.addons.length ? data.addons.map(a => (
                   <tr key={a.id}>
                     <td><strong>{a.id}</strong></td><td>{a.name}</td>
+                    <td><span className="helper-text">{ADDON_KIND_LABEL[a.kind] || ADDON_KIND_LABEL.extra}</span></td>
                     <td><span className="helper-text">+{money(a.price_change)}</span></td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button className="btn btn-sm btn-secondary" onClick={() => editAddon(a)}><i className="fa-solid fa-pen-to-square"></i></button>
                       <button className="btn btn-sm btn-danger" style={{ marginLeft: 4 }} onClick={() => delAddon(a.id)}><i className="fa-solid fa-trash-can"></i></button>
                     </td>
                   </tr>
-                )) : <tr className="empty-row"><td colSpan={4}>No add-ons.</td></tr>}
+                )) : <tr className="empty-row"><td colSpan={5}>No add-ons.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -394,6 +396,13 @@ export default function Recipes() {
           <div className="row-2">
             <div className="field"><label>Name</label><input className="form-control" value={addonModal.name} onChange={(e) => setAddonModal(a => ({ ...a, name: e.target.value }))} /></div>
             <div className="field"><label>Price Change</label><input type="number" className="form-control" value={addonModal.price_change} onChange={(e) => setAddonModal(a => ({ ...a, price_change: e.target.value }))} /></div>
+          </div>
+          <div className="field"><label>Kind</label>
+            <select className="form-control" value={addonModal.kind || 'extra'} onChange={(e) => setAddonModal(a => ({ ...a, kind: e.target.value }))}>
+              <option value="extra">Extra (optional, multi-select)</option>
+              <option value="container">Container (required, single-select)</option>
+              <option value="sweetness">Sweetness (required, single-select)</option>
+            </select>
           </div>
         </Modal>
       )}

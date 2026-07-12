@@ -74,11 +74,16 @@ export default function DrinkCustomizerModal({
         <div className="sage-pos-modal-pills">
           {sweetnessLevels.map(s => (
             <button
-              key={s}
-              className={`sage-pos-modal-pill-btn ${sweet === s ? 'active' : ''}`}
-              onClick={() => setSweet(s)}
+              key={s.value}
+              className={`sage-pos-modal-pill-btn ${sweet === s.value ? 'active' : ''}`}
+              onClick={() => setSweet(s.value)}
             >
-              {s}
+              <span>{s.label}</span>
+              {Number(s.adj) !== 0 && (
+                <span className="price-diff">
+                  ({Number(s.adj) > 0 ? '+' : ''}{money(s.adj)})
+                </span>
+              )}
             </button>
           ))}
         </div>
