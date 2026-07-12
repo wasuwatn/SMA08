@@ -91,6 +91,14 @@ export const TABLE_CONFIG = {
       price DOUBLE PRECISION, yield DOUBLE PRECISION, current_stock DOUBLE PRECISION, min_stock DOUBLE PRECISION, status TEXT,
       mat_barcode TEXT, name TEXT, unit_price DOUBLE PRECISION)`
   },
+  // Menu category names (the free-text menuname.category column is left as-is
+  // for backward compatibility — this table just gives Settings a proper
+  // add/edit/delete list to pick categories from instead of retyping them).
+  categories: {
+    pk: 'id', auto: true,
+    columns: ['id', 'name'],
+    ddl: `CREATE TABLE IF NOT EXISTS categories (id SERIAL PRIMARY KEY, name TEXT)`
+  },
   menuname: {
     pk: 'id', auto: false,
     columns: ['id', 'name', 'category', 'front_price', 'delivery_price', 'status'],

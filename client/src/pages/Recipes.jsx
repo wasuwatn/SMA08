@@ -342,7 +342,12 @@ export default function Recipes() {
           footer={<><button className="btn btn-secondary" onClick={() => setMenuModal(null)}>Cancel</button><button className="btn btn-primary" onClick={saveMenu}>Save</button></>}>
           <div className="row-2">
             <div className="field"><label>Drink ID {menuModal._isNew ? '(auto)' : ''}</label><input className="form-control" value={menuModal.id} disabled onChange={(e) => setMenuModal(m => ({ ...m, id: e.target.value }))} /></div>
-            <div className="field"><label>Category</label><input className="form-control" value={menuModal.category} onChange={(e) => setMenuModal(m => ({ ...m, category: e.target.value }))} /></div>
+            <div className="field"><label>Category</label>
+              <select className="form-control" value={menuModal.category} onChange={(e) => setMenuModal(m => ({ ...m, category: e.target.value }))}>
+                <option value="">-- Category --</option>
+                {data.categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
+            </div>
           </div>
           <div className="field"><label>Name</label><input className="form-control" value={menuModal.name} onChange={(e) => setMenuModal(m => ({ ...m, name: e.target.value }))} /></div>
           <div className="row-2">

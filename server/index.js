@@ -550,7 +550,7 @@ const TABLE_ACCESS = {
   users: 'ADMIN', systemlog: 'ADMIN', processed_txns: 'ADMIN',
   settings: 'settings', promotions: 'promotions',
   materials: 'materials', menuname: 'bom', bom: 'bom', childmenu: 'bom',
-  packagingbom: 'bom', matprepbom: 'bom', addons: 'bom',
+  packagingbom: 'bom', matprepbom: 'bom', addons: 'bom', categories: 'bom',
   customers: 'customers', redemptions: 'pos', salefront: 'pos', shifts: 'pos',
   point_ledger: 'points',
   saledelivery: 'delivery', deliverydaily: 'delivery', deliverymenu: 'delivery',

@@ -1,12 +1,20 @@
 import React, { useState, useRef } from 'react';
 import { useData } from '../lib/data.jsx';
 import { api } from '../lib/api.js';
-import { THEMES, TABLES, downloadFile, csvEscape, parseCSVLine } from '../lib/helpers.js';
+import { THEMES, TABLES, downloadFile, csvEscape, parseCSVLine, money, nextSeqId } from '../lib/helpers.js';
+import Modal from '../components/Modal.jsx';
+
+const blankMenu = { id: '', name: '', category: '', front_price: 0, delivery_price: 0, status: 'Active' };
+const blankCategory = { name: '' };
+const blankModifier = { name: '', price_change: 0 };
 
 export default function Settings() {
-  const { theme, setTheme, settings, data, update, reload, pushToast } = useData();
+  const { theme, setTheme, settings, data, insert, update, remove, reload, pushToast } = useData();
   const [sweetness, setSweetness] = useState(settings.sweetness_levels || '');
   const [buyers, setBuyers] = useState(settings.buyers || '');
+  const [menuModal, setMenuModal] = useState(null);
+  const [categoryModal, setCategoryModal] = useState(null);
+  const [modifierModal, setModifierModal] = useState(null);
   // Receipt & payment (printed on the 58mm slip; PromptPay ID drives the POS QR)
   const [shopName, setShopName] = useState(settings.shop_name || '');
   const [shopAddress, setShopAddress] = useState(settings.shop_address || '');
@@ -135,6 +143,46 @@ export default function Settings() {
     e.target.value = '';
   };
 
+  // ---- Menu (quick add/edit, separate from the full BOM/recipe composer on
+  // the Recipes page — this is just the menuname row: name, category, price) ---
+  const saveMenu = async () => {
+    const m = menuModal;
+    if (!m.id.trim() || !m.name.trim()) return pushToast('Drink ID and name are required.', 'warning');
+    const payload = { ...m, front_price: Number(m.front_price) || 0, delivery_price: Number(m.delivery_price) || 0 };
+    delete payload._isNew;
+    if (m._isNew) {
+      if (data.menuname.some(x => x.id === m.id)) return pushToast('That drink ID already exists.', 'warning');
+      await insert('menuname', payload);
+    } else await update('menuname', m.id, payload);
+    pushToast('Menu item saved.', 'success');
+    setMenuModal(null);
+  };
+  const delMenu = async (m) => { if (confirm(`Delete menu item "${m.name}"?`)) { await remove('menuname', m.id); pushToast('Menu item deleted.', 'success'); } };
+
+  // ---- Category -----------------------------------------------------------
+  const saveCategory = async () => {
+    const c = categoryModal;
+    if (!c.name.trim()) return pushToast('Category name is required.', 'warning');
+    const payload = { name: c.name.trim() };
+    if (c._isNew) await insert('categories', payload);
+    else await update('categories', c.id, payload);
+    pushToast('Category saved.', 'success');
+    setCategoryModal(null);
+  };
+  const delCategory = async (c) => { if (confirm(`Delete category "${c.name}"?`)) { await remove('categories', c.id); pushToast('Category deleted.', 'success'); } };
+
+  // ---- Modifier (same as Recipes' Add-on Options — shares the addons table) --
+  const saveModifier = async () => {
+    const a = modifierModal;
+    if (!a.name.trim()) return pushToast('Modifier name is required.', 'warning');
+    const payload = { name: a.name.trim(), price_change: Number(a.price_change) || 0 };
+    if (a._isNew) await insert('addons', payload);
+    else await update('addons', a.id, payload);
+    pushToast('Modifier saved.', 'success');
+    setModifierModal(null);
+  };
+  const delModifier = async (a) => { if (confirm(`Delete modifier "${a.name}"?`)) { await remove('addons', a.id); pushToast('Modifier deleted.', 'success'); } };
+
   return (
     <div className="grid-2" style={{ alignItems: 'start' }}>
       <div className="card">
@@ -190,6 +238,76 @@ export default function Settings() {
       </div>
 
       <div className="card">
+        <div className="card-header"><h3>หมวดหมู่</h3>
+          <button className="btn btn-primary btn-sm" onClick={() => setCategoryModal({ ...blankCategory, _isNew: true })}><i className="fa-solid fa-plus"></i> Add Category</button>
+        </div>
+        <div className="table-wrap">
+          <table className="data">
+            <thead><tr><th>Name</th><th style={{ width: 1, textAlign: 'right' }}></th></tr></thead>
+            <tbody>
+              {data.categories.length ? data.categories.map(c => (
+                <tr key={c.id}>
+                  <td>{c.name}</td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button className="btn btn-sm btn-secondary" onClick={() => setCategoryModal({ ...c, _isNew: false })}><i className="fa-solid fa-pen-to-square"></i></button>
+                    <button className="btn btn-sm btn-danger" style={{ marginLeft: 4 }} onClick={() => delCategory(c)}><i className="fa-solid fa-trash-can"></i></button>
+                  </td>
+                </tr>
+              )) : <tr className="empty-row"><td colSpan={2}>No categories yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header"><h3>เพิ่มเมนู</h3>
+          <button className="btn btn-primary btn-sm" onClick={() => setMenuModal({ ...blankMenu, id: nextSeqId('MN', data.menuname), _isNew: true })}><i className="fa-solid fa-plus"></i> Add Menu</button>
+        </div>
+        <div className="table-wrap">
+          <table className="data">
+            <thead><tr><th>Name</th><th>Front</th><th>Delivery</th><th>Status</th><th style={{ width: 1, textAlign: 'right' }}></th></tr></thead>
+            <tbody>
+              {data.menuname.length ? data.menuname.map(m => (
+                <tr key={m.id}>
+                  <td><strong>{m.name}</strong><br /><span className="helper-text">{m.category}</span></td>
+                  <td>{money(m.front_price)}</td>
+                  <td>{money(m.delivery_price)}</td>
+                  <td><span className={`badge ${m.status === 'Active' ? 'online' : 'offline'}`}>{m.status}</span></td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button className="btn btn-sm btn-secondary" onClick={() => setMenuModal({ ...m, _isNew: false })}><i className="fa-solid fa-pen-to-square"></i></button>
+                    <button className="btn btn-sm btn-danger" style={{ marginLeft: 4 }} onClick={() => delMenu(m)}><i className="fa-solid fa-trash-can"></i></button>
+                  </td>
+                </tr>
+              )) : <tr className="empty-row"><td colSpan={5}>No menu items yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header"><h3>Modifier</h3>
+          <button className="btn btn-primary btn-sm" onClick={() => setModifierModal({ ...blankModifier, _isNew: true })}><i className="fa-solid fa-plus"></i> Add Modifier</button>
+        </div>
+        <div className="table-wrap">
+          <table className="data">
+            <thead><tr><th>Name</th><th>Price Change</th><th style={{ width: 1, textAlign: 'right' }}></th></tr></thead>
+            <tbody>
+              {data.addons.length ? data.addons.map(a => (
+                <tr key={a.id}>
+                  <td>{a.name}</td>
+                  <td><span className="helper-text">+{money(a.price_change)}</span></td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button className="btn btn-sm btn-secondary" onClick={() => setModifierModal({ ...a, _isNew: false })}><i className="fa-solid fa-pen-to-square"></i></button>
+                    <button className="btn btn-sm btn-danger" style={{ marginLeft: 4 }} onClick={() => delModifier(a)}><i className="fa-solid fa-trash-can"></i></button>
+                  </td>
+                </tr>
+              )) : <tr className="empty-row"><td colSpan={3}>No modifiers yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card">
         <div className="card-header"><h3>CSV Data Tools</h3></div>
         <p className="card-title-sm">Export Table</p>
         <div className="input-group mb-12">
@@ -218,6 +336,48 @@ export default function Settings() {
           <input ref={jsonRef} type="file" accept=".json" hidden onChange={onImportJSON} />
         </div>
       </div>
+
+      {categoryModal && (
+        <Modal title={categoryModal._isNew ? 'Add Category' : `Edit ${categoryModal.name}`} onClose={() => setCategoryModal(null)}
+          footer={<><button className="btn btn-secondary" onClick={() => setCategoryModal(null)}>Cancel</button><button className="btn btn-primary" onClick={saveCategory}>Save</button></>}>
+          <div className="field"><label>Name</label>
+            <input className="form-control" value={categoryModal.name} onChange={(e) => setCategoryModal(c => ({ ...c, name: e.target.value }))} />
+          </div>
+        </Modal>
+      )}
+
+      {menuModal && (
+        <Modal title={menuModal._isNew ? 'Add Menu' : `Edit ${menuModal.name}`} onClose={() => setMenuModal(null)}
+          footer={<><button className="btn btn-secondary" onClick={() => setMenuModal(null)}>Cancel</button><button className="btn btn-primary" onClick={saveMenu}>Save</button></>}>
+          <div className="row-2">
+            <div className="field"><label>Menu ID {menuModal._isNew ? '(auto)' : ''}</label><input className="form-control" value={menuModal.id} disabled /></div>
+            <div className="field"><label>Category</label>
+              <select className="form-control" value={menuModal.category} onChange={(e) => setMenuModal(m => ({ ...m, category: e.target.value }))}>
+                <option value="">-- Category --</option>
+                {data.categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="field"><label>Name</label><input className="form-control" value={menuModal.name} onChange={(e) => setMenuModal(m => ({ ...m, name: e.target.value }))} /></div>
+          <div className="row-2">
+            <div className="field"><label>Front Price</label><input type="number" className="form-control" value={menuModal.front_price} onChange={(e) => setMenuModal(m => ({ ...m, front_price: e.target.value }))} /></div>
+            <div className="field"><label>Delivery Price</label><input type="number" className="form-control" value={menuModal.delivery_price} onChange={(e) => setMenuModal(m => ({ ...m, delivery_price: e.target.value }))} /></div>
+          </div>
+          <div className="field"><label>Status</label>
+            <select className="form-control" value={menuModal.status} onChange={(e) => setMenuModal(m => ({ ...m, status: e.target.value }))}><option>Active</option><option>Inactive</option></select>
+          </div>
+        </Modal>
+      )}
+
+      {modifierModal && (
+        <Modal title={modifierModal._isNew ? 'Add Modifier' : `Edit ${modifierModal.name}`} onClose={() => setModifierModal(null)}
+          footer={<><button className="btn btn-secondary" onClick={() => setModifierModal(null)}>Cancel</button><button className="btn btn-primary" onClick={saveModifier}>Save</button></>}>
+          <div className="row-2">
+            <div className="field"><label>Name</label><input className="form-control" value={modifierModal.name} onChange={(e) => setModifierModal(a => ({ ...a, name: e.target.value }))} /></div>
+            <div className="field"><label>Price Change</label><input type="number" className="form-control" value={modifierModal.price_change} onChange={(e) => setModifierModal(a => ({ ...a, price_change: e.target.value }))} /></div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
