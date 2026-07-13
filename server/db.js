@@ -197,12 +197,17 @@ export const TABLE_CONFIG = {
     pk: 'id', auto: true,
     columns: ['id', 'date', 'customer_name', 'customer_address', 'customer_id', 'menu_name', 'variant', 'quantity',
       'sweetness', 'container', 'addons', 'addon_price', 'total_price', 'cashier', 'order_no',
-      'order_type', 'delivery_platform', 'is_free', 'promotion_id', 'payment_method', 'shift_id'],
+      'order_type', 'delivery_platform', 'is_free', 'promotion_id', 'payment_method', 'shift_id', 'status'],
+    // `status` is NULL for a normal sale; a voided bill sets every one of its
+    // cups to 'void'. Voided rows stay in the table (soft void — visible in
+    // history, recoverable) but are excluded from every total/count/report, so
+    // all aggregations must filter them out null-safely (status IS DISTINCT
+    // FROM 'void').
     ddl: `CREATE TABLE IF NOT EXISTS salefront (
       id SERIAL PRIMARY KEY, date DATE, customer_name TEXT,
       customer_address TEXT, menu_name TEXT, variant TEXT, quantity INTEGER, sweetness TEXT,
       container TEXT, addons TEXT, addon_price DOUBLE PRECISION, total_price DOUBLE PRECISION, cashier TEXT,
-      order_no TEXT, order_type TEXT, delivery_platform TEXT, is_free TEXT, promotion_id TEXT)`
+      order_no TEXT, order_type TEXT, delivery_platform TEXT, is_free TEXT, promotion_id TEXT, status TEXT)`
   },
   childmenu: {
     pk: 'id', auto: true,

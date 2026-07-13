@@ -14,7 +14,7 @@ export default function Dashboard({ year }) {
   const { data } = useData();
   const [donut, setDonut] = useState('channels');
 
-  const salefront = data.salefront.filter(s => getYearFromDate(s.date) === year);
+  const salefront = data.salefront.filter(s => s.status !== 'void' && getYearFromDate(s.date) === year);
   const saledelivery = data.saledelivery.filter(d => getYearFromDate(d.date) === year);
   const deliverydaily = (data.deliverydaily || []).filter(d => getYearFromDate(d.date) === year);
   const deliverymenu = (data.deliverymenu || []).filter(m => getYearFromDate(m.period_end) === year);

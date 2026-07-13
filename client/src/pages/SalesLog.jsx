@@ -94,12 +94,15 @@ export default function SalesLog() {
               </thead>
               <tbody>
                 {pageRows.length ? pageRows.map(r => (
-                  <tr key={`${r._table}-${r.id}`}>
+                  <tr key={`${r._table}-${r.id}`} style={r.status === 'void' ? { opacity: 0.5 } : undefined}>
                     <td>{r.date}</td>
                     <td>
                       {r._table === 'saledelivery'
                         ? `DLV-${String(r.id).padStart(4, '0')}`
                         : `#${r.order_no || String(r.id).padStart(4, '0')}`}
+                      {r.status === 'void' && (
+                        <span className="helper-text" style={{ marginLeft: 6, color: 'var(--danger, #c0392b)', fontWeight: 700 }}>VOID</span>
+                      )}
                     </td>
                     <td><strong>{r.customer_name}</strong></td>
                     <td>
