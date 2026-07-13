@@ -10,7 +10,7 @@ export default function DailyCups() {
 
   // One card per transaction record on the selected day (POS cup rows + delivery orders).
   const cards = useMemo(() => {
-    const pos = data.salefront.filter(s => s.date === day).map(s => {
+    const pos = data.salefront.filter(s => s.status !== 'void' && s.date === day).map(s => {
       let addons = []; try { addons = JSON.parse(s.addons || '[]'); } catch { /* */ }
       return {
         key: `f${s.id}`, channel: 'POS', icon: 'fa-cash-register',

@@ -296,7 +296,7 @@ app.get('/api/customer/me', requireCustomer, async (req, res) => {
     const { balance: pointsBalance, pointsPerFree, maxFreeValue, available: pointsAvailable, pending: pointsPending }
       = await redemptionAvailability(customer.id, promotion);
     const { rows: recentOrders } = await pool.query(
-      'SELECT date, menu_name, total_price, is_free FROM salefront WHERE customer_id = $1 ORDER BY id DESC LIMIT 10',
+      "SELECT date, menu_name, total_price, is_free FROM salefront WHERE customer_id = $1 AND status IS DISTINCT FROM 'void' ORDER BY id DESC LIMIT 10",
       [customer.id]
     );
     const { rows: pointsHistory } = await pool.query(
@@ -698,6 +698,67 @@ app.get('/api/points/balance', async (req, res) => {
     const customerId = Number(req.query.customer_id);
     const info = await redemptionAvailability(Number.isInteger(customerId) ? customerId : null, promotion);
     res.json(info);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+// Read the receipt claim code + points for one order, so a satellite POS can
+// render/reprint the loyalty QR from history (the checkout response's one-time
+// claim code isn't persisted client-side). Returns the pending 'receipt'
+// point_ledger row this order minted at checkout. Ungated like the other
+// /api/points GETs — the code is meant to be printed on the receipt anyway.
+// `status` lets the client tell a still-claimable code ('pending') from one the
+// customer already claimed; a voided bill has no receipt row (see void below),
+// so it comes back null.
+app.get('/api/points/receipt/:order_no', async (req, res) => {
+  try {
+    const { rows: [row] } = await pool.query(
+      "SELECT token, points, status FROM point_ledger WHERE order_no = $1 AND kind = 'receipt' LIMIT 1",
+      [String(req.params.order_no)]
+    );
+    if (!row) return res.json({ claim_code: null, points: 0, status: null });
+    res.json({ claim_code: row.token, points: row.points, status: row.status });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+// Soft-void a whole bill (Admin only). The cups stay in salefront flagged
+// status='void' — visible in history, recoverable — but every aggregation
+// filters them out (shift close, dashboards, customer history). We refuse to
+// void a bill whose loyalty points a customer has already claimed or spent,
+// since reversing a customer's balance is out of scope here. The pending
+// receipt claim code is deleted so the voided bill can no longer earn points.
+// Note: a bill in an already-closed shift won't retroactively change that
+// shift's frozen Z-report snapshot — live totals and later shifts are correct.
+app.post('/api/salefront/void/:order_no', async (req, res) => {
+  if (!isAdmin(req)) return forbidden(res);
+  const orderNo = String(req.params.order_no);
+  try {
+    const result = await withTransaction(async (client) => {
+      const { rows: ledger } = await client.query(
+        "SELECT kind, status FROM point_ledger WHERE order_no = $1 AND kind IN ('receipt', 'spend')",
+        [orderNo]
+      );
+      if (ledger.some(l => l.kind === 'receipt' && l.status === 'claimed')) return { error: 'POINTS_CLAIMED' };
+      if (ledger.some(l => l.kind === 'spend')) return { error: 'POINTS_SPENT' };
+      const { rowCount } = await client.query(
+        "UPDATE salefront SET status = 'void' WHERE order_no = $1 AND status IS DISTINCT FROM 'void'",
+        [orderNo]
+      );
+      if (!rowCount) return { error: 'NOT_FOUND' };
+      await client.query(
+        "DELETE FROM point_ledger WHERE order_no = $1 AND kind = 'receipt' AND status = 'pending'",
+        [orderNo]
+      );
+      return { voided: rowCount };
+    });
+    if (result.error === 'NOT_FOUND') return res.status(404).json({ error: 'ไม่พบบิลนี้ (หรือยกเลิกไปแล้ว)' });
+    if (result.error === 'POINTS_CLAIMED') return res.status(409).json({ error: 'บิลนี้ลูกค้ารับแต้มไปแล้ว ยกเลิกไม่ได้' });
+    if (result.error === 'POINTS_SPENT') return res.status(409).json({ error: 'บิลนี้ใช้แต้มแลกของฟรี ยกเลิกไม่ได้' });
+    await logActivity(actor(req), 'SALE VOID', `Order #${orderNo} (${result.voided} cup${result.voided > 1 ? 's' : ''})`);
+    res.json({ voided: true, order_no: orderNo, rows: result.voided });
   } catch (e) {
     fail(res, e);
   }
@@ -1139,7 +1200,7 @@ app.post('/api/shift/close', async (req, res) => {
            COUNT(DISTINCT order_no) AS orders,
            COUNT(*) AS cups,
            COUNT(*) FILTER (WHERE is_free = '1') AS free_cups
-         FROM salefront WHERE shift_id = $1`, [String(shift.id)]
+         FROM salefront WHERE shift_id = $1 AND status IS DISTINCT FROM 'void'`, [String(shift.id)]
       );
       const cashSales = Number(agg.cash_sales);
       const expected = Number(shift.opening_cash || 0) + cashSales;

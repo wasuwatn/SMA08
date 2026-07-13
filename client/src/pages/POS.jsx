@@ -101,7 +101,9 @@ export default function POS() {
   // satellite apps skip loading (see skipHeavyTables in data.jsx).
   const [recentSales, setRecentSales] = useState([]);
   const refreshRecentSales = useCallback(() => {
-    api.list('salefront', { since: daysAgo(HISTORY_WINDOW_DAYS) }).then(setRecentSales).catch(() => {});
+    api.list('salefront', { since: daysAgo(HISTORY_WINDOW_DAYS) })
+      .then(rows => setRecentSales(rows.filter(r => r.status !== 'void')))
+      .catch(() => {});
   }, []);
   useEffect(() => { refreshRecentSales(); }, [refreshRecentSales]);
 

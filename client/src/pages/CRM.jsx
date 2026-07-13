@@ -6,7 +6,9 @@ import Modal from '../components/Modal.jsx';
 
 export default function CRM() {
   const { user, data, reload, pushToast } = useData();
-  const { customers, salefront, saledelivery } = data;
+  const { customers, saledelivery } = data;
+  // Voided bills stay in the table but must not count toward spend/cups.
+  const salefront = data.salefront.filter(s => s.status !== 'void');
   const [search, setSearch] = useState('');
   const [granting, setGranting] = useState(null); // { customer, points, note }
   const [busy, setBusy] = useState(false);
