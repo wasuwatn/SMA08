@@ -34,5 +34,8 @@ export const customerApi = {
   menuOptions: () => req('GET', '/api/customer/menu-options'),
   me: () => req('GET', '/api/customer/me'),
   claimPoints: (token) => req('POST', '/api/customer/claim-points', { token }),
-  redeem: () => req('POST', '/api/customer/redeem', {})
+  redeem: () => req('POST', '/api/customer/redeem', {}),
+  // Keep-alive: no auth, hits the backend's lightweight /api/ping to keep the
+  // free-tier host + Supabase warm so a returning customer skips the cold start.
+  ping: () => req('GET', '/api/ping')
 };

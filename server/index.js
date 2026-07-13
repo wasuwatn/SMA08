@@ -73,6 +73,24 @@ const apiLimiter = rateLimit({
 });
 app.use('/api', apiLimiter);
 
+// Keep-alive / cold-start guard. Public (no auth), mounted above every guard.
+// The customer portal (customer.html) pings this while it's open, and an
+// external cron (cron-job.org, every ~10-14 min) hits it around the clock so
+// the free-tier host (Render) never spins down and Supabase never pauses from
+// inactivity. The lightweight `SELECT 1` is what creates the DB activity that
+// keeps the database out of deep sleep — a bare 200 wouldn't touch Postgres.
+app.get('/api/ping', async (_req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({ ok: true, ts: Date.now() });
+  } catch (e) {
+    // Express itself is awake (that's half the point of the ping); only the DB
+    // is unreachable. Report it without leaking driver internals.
+    console.error('ping: database unreachable', e.message);
+    res.status(503).json({ ok: false });
+  }
+});
+
 const valid = (t) => Object.prototype.hasOwnProperty.call(TABLE_CONFIG, t);
 
 // 500s log the real error server-side but never echo it to the client —

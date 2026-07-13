@@ -80,6 +80,26 @@ staff apps may only run intermittently.
 The hub's own `/customer.html` route and `liff.state` redirect are left in
 place as a harmless fallback for local dev — nothing to remove there.
 
+#### Keeping the backend warm (cold-start guard)
+
+Vercel serves `customer.html` as a static site, but the hub API it talks to
+(and Supabase behind it) run on free tiers that go to sleep: Render spins the
+hub down after ~15 min with no traffic, and Supabase pauses a project after a
+long idle stretch. The first customer to open the portal then waits out a slow
+cold start on login.
+
+Two layers guard against this:
+
+1. **While the portal is open** — `customer.html` pings `GET /api/ping` on load
+   and every 10 min (see `CustomerPortal.jsx`). `/api/ping` runs a tiny
+   `SELECT 1`, so it wakes the hub *and* touches Supabase. No setup needed.
+2. **Around the clock** — the in-page ping only fires while someone has the
+   portal open, so add an external scheduler for continuous coverage. On
+   [cron-job.org](https://cron-job.org) (free) create a job that sends
+   `GET https://<hub-public-url>/api/ping` every **10–14 minutes** (shorter than
+   Render's ~15 min idle window). `/api/ping` needs no auth and returns
+   `{ ok: true }`. This is what actually keeps the hub from ever sleeping.
+
 ### LINE expense-slip automation (Make.com) + review portal (Vercel)
 
 Human-in-the-loop expense capture: a receipt photo sent to the shop's LINE OA

@@ -225,6 +225,29 @@ export default function CustomerPortal() {
 
   useEffect(() => { bootstrap(); }, [bootstrap]);
 
+  // Cold-start guard. The backend (Render free tier) spins down after ~15 min
+  // of no traffic and Supabase pauses after long inactivity, so the first
+  // customer to open the portal eats a slow cold start on login. Ping the
+  // lightweight /api/ping (which runs a tiny DB query) to keep both warm:
+  // once immediately on mount — this fires alongside bootstrap()'s lineLogin,
+  // pre-warming the backend so the real requests are quicker — then every
+  // 10 min while the page stays open, plus whenever the tab is refocused
+  // (background setInterval gets throttled). All failures are swallowed: a
+  // missed keep-alive must never disturb the portal. This only covers the
+  // "page is open" window; see README for the external cron that keeps the
+  // backend warm around the clock.
+  useEffect(() => {
+    const ping = () => { customerApi.ping().catch(() => {}); };
+    ping();
+    const id = setInterval(ping, 10 * 60 * 1000);
+    const onVisible = () => { if (document.visibilityState === 'visible') ping(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
+
   const submitRegister = async (e) => {
     e.preventDefault();
     if (!regPhone.trim()) { setError('กรุณากรอกเบอร์โทร'); return; }
