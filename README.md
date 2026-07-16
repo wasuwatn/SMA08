@@ -121,22 +121,27 @@ the only way in without a staff/customer session:
   Flex Message button URL) is the only auth, no staff login required.
 
 **Review page** (`expense-review.html`) deploys the same way as the customer
-portal:
+portal — as a **second, separate Vercel project** pointed at this repo (the
+root `vercel.json` is already claimed by the customer portal project). Two
+ways to set that project up:
 
-1. `npm run build:expense-review` (repo root) builds only `expense-review.html`
-   into `client/dist-expense-review/`.
-2. Create a **second, separate Vercel project** pointed at this repo (the
-   existing `vercel.json` is already claimed by the customer portal project).
-   In that project's settings, set Install Command `npm --prefix client
-   install`, Build Command `npm --prefix client run build:expense-review`,
-   Output Directory `client/dist-expense-review` (`vercel.expense-review.json`
-   documents the same values for reference / `vercel --local-config` deploys).
-   Set env var `VITE_API_BASE=https://<hub-public-url>` (and
-   `VITE_EXPENSE_LIFF_ID=<your LIFF id>` once you've created the LIFF app
-   below — the page still works without it, just skips the closing chat
-   message / auto-close).
-3. Add the Vercel domain to the hub's `CORS_ORIGIN` env var and restart the hub.
-4. In LINE Developers Console: reuse the same Messaging API channel as the
+- **Git-connected, no local Node/CLI needed** — when importing the repo as a
+  new Vercel project, set **Root Directory** to `client`. Vercel then reads
+  `client/vercel.json` (install/build/output + the SPA rewrite) instead of
+  the root one, so it never conflicts with the customer portal project. Every
+  push to the branch auto-deploys, built entirely on Vercel's servers.
+- **CLI, for one-off/manual deploys** — from the repo root run
+  `vercel --local-config vercel.expense-review.json` (documents the same
+  install/build/output values as `client/vercel.json`, just resolved from the
+  repo root instead of `client/`).
+
+Either way, set env var `VITE_API_BASE=https://<hub-public-url>` (and
+`VITE_EXPENSE_LIFF_ID=<your LIFF id>` once you've created the LIFF app
+below — the page still works without it, just skips the closing chat
+message / auto-close) in the Vercel project's settings, then:
+
+1. Add the Vercel domain to the hub's `CORS_ORIGIN` env var and restart the hub.
+2. In LINE Developers Console: reuse the same Messaging API channel as the
    rewards bot (or a new one), point its Webhook URL at the Make.com scenario,
    and add a **new LIFF app** (separate from the customer-rewards LIFF —
    this one is for staff, not customers) with Endpoint URL
