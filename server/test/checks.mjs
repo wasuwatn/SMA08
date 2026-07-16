@@ -229,5 +229,46 @@ export async function runChecks(BASE) {
   r = await req('POST', '/api/expense', { expense: { date: '2026-07-02', description: 'x', amount: 'not-a-number' } }, staff);
   ok('500 does not leak internals', r.status !== 500 || r.data.error === 'Internal server error.', JSON.stringify(r.data));
 
+  console.log('\n[10] PIN login');
+  r = await req('GET', '/api/auth/staff-list');
+  ok('staff-list is public and lists both seeded users',
+    r.status === 200 && Array.isArray(r.data) && r.data.includes('admin') && r.data.includes('staff'));
+  ok('staff-list entries are bare usernames, no other fields', r.data.every(u => typeof u === 'string'));
+
+  r = await req('POST', '/api/auth/pin-login', { username: 'staff', pin: '1234' });
+  ok('pin-login before any PIN is set -> 401', r.status === 401, `got ${r.status}`);
+
+  r = await req('POST', '/api/auth/set-pin', { currentPassword: 'wrong', newPin: '1234' }, staff);
+  ok('set-pin wrong current password -> 401', r.status === 401, `got ${r.status}`);
+  r = await req('POST', '/api/auth/set-pin', { currentPassword: 'staff', newPin: '12' }, staff);
+  ok('set-pin non-4-digit -> 400', r.status === 400, `got ${r.status}`);
+  r = await req('POST', '/api/auth/set-pin', { currentPassword: 'staff', newPin: '1234' }, staff);
+  ok('set-pin succeeds', r.status === 200, `got ${r.status}`);
+
+  r = await req('POST', '/api/auth/pin-login', { username: 'staff', pin: '1234' });
+  ok('pin-login with correct PIN', r.status === 200 && !!r.data.token, `got ${r.status}`);
+  ok('pin-login response has no password/pin hash',
+    !('password' in (r.data.user || {})) && !('pin' in (r.data.user || {})));
+
+  r = await req('POST', '/api/auth/pin-login', { username: 'staff', pin: '0000' });
+  ok('pin-login wrong PIN -> 401', r.status === 401, `got ${r.status}`);
+
+  // 4 more wrong attempts (5 total, including the one just above) should trip
+  // the per-username lockout — scoped to this account, not the whole kiosk.
+  for (let i = 0; i < 4; i++) {
+    await req('POST', '/api/auth/pin-login', { username: 'staff', pin: '0000' });
+  }
+  r = await req('POST', '/api/auth/pin-login', { username: 'staff', pin: '1234' });
+  ok('locked out after repeated failures, even with the correct PIN -> 429', r.status === 429, `got ${r.status}`);
+
+  console.log('\n[11] PIN set via generic user CRUD');
+  r = await req('PUT', '/api/users/admin', { role: 'Admin', pin: '12' }, admin);
+  ok('PUT /api/users pin non-4-digit -> 400', r.status === 400, `got ${r.status}`);
+  r = await req('PUT', '/api/users/admin', { role: 'Admin', pin: '5678' }, admin);
+  ok('PUT /api/users pin accepted and stripped from response',
+    r.status === 200 && !('pin' in r.data), `got ${JSON.stringify(r.data)}`);
+  r = await req('GET', '/api/users', undefined, admin);
+  ok('GET /api/users never leaks pin hash', r.status === 200 && r.data.every(u => !('pin' in u)));
+
   return { pass, fail };
 }
