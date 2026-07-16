@@ -11,11 +11,16 @@
 // share this OA — anyone not in settings.expense_line_users is ignored without
 // a reply so the bot stays invisible to them.
 import crypto from 'node:crypto';
-import { pool, withTransaction, insertRow, updateRow, logActivity } from './db.js';
+import { pool, withTransaction, insertRow, updateRow, getRow, logActivity } from './db.js';
 
 const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET;
 const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+// Same LIFF app as expense-review.html (VITE_EXPENSE_LIFF_ID on the client
+// build) — the Flex card's "แก้ไขรายการ" button opens it with ?flow=chat so
+// the one page serves both the old single-slip form and this item checklist.
+// Optional: without it the button is simply omitted from the card.
+const LINE_EXPENSE_LIFF_ID = process.env.LINE_EXPENSE_LIFF_ID;
 const DEV = process.env.NODE_ENV !== 'production';
 
 const MAX_ITEMS = 10; // keeps the Flex card compact and bounds model output
@@ -24,6 +29,30 @@ const MAX_ITEMS = 10; // keeps the Flex card compact and bounds model output
 // books the expense on yesterday. Shift to ICT (UTC+7) before taking the date.
 const bangkokToday = () =>
   new Date(Date.now() + 7 * 3600 * 1000).toISOString().split('T')[0];
+
+// Mirrors index.js's fail() — never echo raw pg/driver errors to the client.
+const fail = (res, e) => {
+  console.error(e);
+  res.status(500).json({ error: 'Internal server error.' });
+};
+
+// Shared by the postback confirm action and the HTTP confirm endpoint below:
+// insert one expenses row per selected item and link the slip to the first
+// one (pending_slips.expense_id is a single FK; "which of N rows" doesn't
+// matter, it's only used to prove the slip *has* been turned into expenses).
+async function insertSelectedExpenses(client, slipId, buyerName, selectedItems) {
+  const date = bangkokToday();
+  const rows = [];
+  for (const it of selectedItems) {
+    rows.push(await insertRow('expenses', {
+      date, description: it.description, amount: it.amount,
+      buyer: buyerName, category: it.category || 'Other',
+      note: `LINE chat slip #${slipId}`
+    }, client));
+  }
+  await client.query('UPDATE pending_slips SET expense_id = $2 WHERE id = $1', [slipId, rows[0].id]);
+  return rows;
+}
 
 function validSignature(rawBody, headerSig) {
   if (!rawBody || !headerSig) return false;
@@ -168,32 +197,48 @@ async function analyzeExpense({ text, image }) {
 }
 
 // ---------------------------------------------------------------------------
-// Flex card: item list with per-row remove/restore buttons + confirm/cancel.
-
+// Flex card: item list (read-only) + "บันทึกทั้งหมด" / "แก้ไขรายการ" / "ยกเลิก".
+//
+// Per-item toggling used to be postback buttons directly on the card, but
+// every tap meant waiting for a brand new chat message (LINE can't edit a
+// message that's already been sent) — a real back-and-forth for what should
+// feel instant. "แก้ไขรายการ" instead opens the expense-review LIFF page
+// (?flow=chat) where unchecking an item is a local checkbox with no round
+// trip; only the final save talks to the server. "บันทึกทั้งหมด" stays a
+// single-tap postback for the common case where nothing needs removing.
 function buildSlipFlex(slip, items) {
-  const selected = items.filter(i => i.selected);
-  const total = selected.reduce((s, i) => s + i.amount, 0);
-  const rows = items.map((it, i) => ({
+  const total = items.reduce((s, i) => s + i.amount, 0);
+  const rows = items.map((it) => ({
     type: 'box', layout: 'horizontal', alignItems: 'center', spacing: 'sm',
     contents: [
-      { type: 'text', text: it.selected ? '✅' : '➖', flex: 0, size: 'sm' },
       {
         type: 'box', layout: 'vertical', flex: 5,
         contents: [
-          { type: 'text', text: it.description, size: 'sm', wrap: true,
-            ...(it.selected ? {} : { color: '#aaaaaa', decoration: 'line-through' }) },
+          { type: 'text', text: it.description, size: 'sm', wrap: true },
           { type: 'text', text: it.category, size: 'xxs', color: '#999999' }
         ]
       },
-      { type: 'text', text: `${it.amount}฿`, flex: 2, size: 'sm', align: 'end',
-        ...(it.selected ? {} : { color: '#aaaaaa' }) },
-      { type: 'button', style: 'link', height: 'sm', flex: 2,
-        action: { type: 'postback', label: it.selected ? 'ลบ' : 'คืน', data: `exp:t:${slip.id}:${i}` } }
+      { type: 'text', text: `${it.amount}฿`, flex: 2, size: 'sm', align: 'end' }
     ]
   }));
+  const footerButtons = [
+    { type: 'button', style: 'primary', height: 'sm',
+      action: { type: 'postback', label: `บันทึกทั้งหมด ${items.length} รายการ`, data: `exp:c:${slip.id}` } }
+  ];
+  if (LINE_EXPENSE_LIFF_ID) {
+    footerButtons.push({
+      type: 'button', style: 'secondary', height: 'sm',
+      action: {
+        type: 'uri', label: 'แก้ไขรายการ',
+        uri: `https://liff.line.me/${LINE_EXPENSE_LIFF_ID}?flow=chat&id=${slip.id}&token=${slip.confirm_token}`
+      }
+    });
+  }
+  footerButtons.push({ type: 'button', style: 'secondary', height: 'sm',
+    action: { type: 'postback', label: 'ยกเลิก', data: `exp:x:${slip.id}` } });
   return {
     type: 'flex',
-    altText: `รายการค่าใช้จ่าย ${total} บาท (${selected.length} รายการ)`,
+    altText: `รายการค่าใช้จ่าย ${total} บาท (${items.length} รายการ)`,
     contents: {
       type: 'bubble',
       body: {
@@ -201,19 +246,12 @@ function buildSlipFlex(slip, items) {
         contents: [
           { type: 'text', text: slip.merchant || 'รายการค่าใช้จ่าย', weight: 'bold', size: 'md', wrap: true },
           { type: 'separator' },
-          ...rows
+          ...rows,
+          { type: 'separator' },
+          { type: 'text', text: `รวม ${total} บาท (${items.length} รายการ)`, weight: 'bold', size: 'sm', align: 'end' }
         ]
       },
-      footer: {
-        type: 'box', layout: 'vertical', spacing: 'sm',
-        contents: [
-          { type: 'text', text: `รวม ${total} บาท (${selected.length} รายการ)`, weight: 'bold', size: 'sm', align: 'center' },
-          { type: 'button', style: 'primary', height: 'sm',
-            action: { type: 'postback', label: `บันทึก ${selected.length} รายการ`, data: `exp:c:${slip.id}` } },
-          { type: 'button', style: 'secondary', height: 'sm',
-            action: { type: 'postback', label: 'ยกเลิก', data: `exp:x:${slip.id}` } }
-        ]
-      }
+      footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: footerButtons }
     }
   };
 }
@@ -281,40 +319,19 @@ async function handleExpenseMessage(event, userId) {
 }
 
 // ---------------------------------------------------------------------------
-// Postback pipeline: exp:t:<slipId>:<idx> toggle / exp:c:<slipId> confirm /
-// exp:x:<slipId> cancel. Signature already proves the event came from LINE;
+// Postback pipeline: exp:c:<slipId> confirm-all / exp:x:<slipId> cancel.
+// (Per-item removal moved to the expense-review LIFF page — see
+// buildSlipFlex above.) Signature already proves the event came from LINE;
 // requiring the tapper to be the slip's sender closes the loop.
 
 const ZERO_SELECTED = Symbol('zero-selected');
 
 async function handlePostback(event, userId, buyerName) {
-  const m = /^exp:(t|c|x):(\d+)(?::(\d+))?$/.exec(String(event.postback?.data || ''));
+  const m = /^exp:(c|x):(\d+)$/.exec(String(event.postback?.data || ''));
   if (!m) return; // not ours (e.g. future postbacks from other features)
-  const [, action, slipIdStr, idxStr] = m;
+  const [, action, slipIdStr] = m;
   const slipId = Number(slipIdStr);
   const replyToken = event.replyToken;
-
-  if (action === 't') {
-    // FOR UPDATE: two quick taps race the read-modify-write on the JSON blob.
-    const updated = await withTransaction(async (client) => {
-      const { rows: [slip] } = await client.query(
-        'SELECT * FROM pending_slips WHERE id = $1 FOR UPDATE', [slipId]);
-      if (!slip || slip.line_user_id !== userId || slip.status !== 'pending') return null;
-      const items = JSON.parse(slip.items || '[]');
-      const idx = Number(idxStr);
-      if (!items[idx]) return null;
-      items[idx].selected = !items[idx].selected;
-      await client.query('UPDATE pending_slips SET items = $2 WHERE id = $1',
-        [slipId, JSON.stringify(items)]);
-      return { slip, items };
-    });
-    if (!updated) {
-      await lineReply(replyToken, textMsg('รายการนี้ถูกบันทึกหรือยกเลิกไปแล้วค่ะ'));
-      return;
-    }
-    await lineReply(replyToken, buildSlipFlex(updated.slip, updated.items));
-    return;
-  }
 
   if (action === 'c') {
     let saved;
@@ -330,25 +347,12 @@ async function handlePostback(event, userId, buyerName) {
         if (!claim.rowCount) return null;
         const selected = JSON.parse(claim.rows[0].items || '[]').filter(i => i.selected);
         if (!selected.length) throw ZERO_SELECTED; // rolls the claim back
-        const date = bangkokToday();
-        const rows = [];
-        for (const it of selected) {
-          rows.push(await insertRow('expenses', {
-            date,
-            description: it.description,
-            amount: it.amount,
-            buyer: buyerName,
-            category: it.category || 'Other',
-            note: `LINE chat slip #${slipId}`
-          }, client));
-        }
-        await client.query('UPDATE pending_slips SET expense_id = $2 WHERE id = $1',
-          [slipId, rows[0].id]);
+        await insertSelectedExpenses(client, slipId, buyerName, selected);
         return selected;
       });
     } catch (e) {
       if (e !== ZERO_SELECTED) throw e;
-      await lineReply(replyToken, textMsg('ยังไม่มีรายการที่เลือกอยู่เลย — กด "คืน" รายการที่ต้องการ หรือกดยกเลิกถ้าไม่ต้องการบันทึก'));
+      await lineReply(replyToken, textMsg('ไม่มีรายการให้บันทึก — กดยกเลิก หรือกด "แก้ไขรายการ" ในการ์ดเดิมเพื่อเลือกใหม่'));
       return;
     }
     if (!saved) {
@@ -415,5 +419,55 @@ export function registerLineExpenseRoutes(app) {
     // Reply tokens stay valid long enough to answer after the ack.
     res.sendStatus(200);
     processEvents(req.body?.events).catch(e => console.error('lineExpense: batch failed', e));
+  });
+
+  // Backs the expense-review LIFF page's "?flow=chat" checklist (opened from
+  // the Flex card's "แก้ไขรายการ" button) — instant local checkboxes, one
+  // network round trip on save, instead of a postback per item. Same
+  // token-is-the-auth model as the older /api/line/slips/:id routes.
+  app.get('/api/line/chat-slips/:id', async (req, res) => {
+    const token = String(req.query.token || '');
+    try {
+      const slip = await getRow('pending_slips', req.params.id);
+      if (!slip || !token || slip.confirm_token !== token || slip.status !== 'pending' || !slip.items) {
+        return res.status(404).json({ error: 'Slip not found or already processed.' });
+      }
+      res.json({ merchant: slip.merchant, items: JSON.parse(slip.items) });
+    } catch (e) {
+      fail(res, e);
+    }
+  });
+
+  app.post('/api/line/chat-slips/:id/confirm', async (req, res) => {
+    const token = String(req.body?.token || '');
+    const slipId = req.params.id;
+    // Client sends back which checkboxes ended up checked; re-fetching the
+    // canonical items server-side (not trusting client-supplied amounts) —
+    // the boolean array only says which of the stored items to keep.
+    const selectedFlags = Array.isArray(req.body?.selected) ? req.body.selected : null;
+    try {
+      const result = await withTransaction(async (client) => {
+        const claim = await client.query(
+          `UPDATE pending_slips SET status = 'completed', confirmed_at = $3
+           WHERE id = $1 AND confirm_token = $2 AND status = 'pending'
+           RETURNING id, items, line_user_id`,
+          [slipId, token, new Date().toISOString()]);
+        if (!claim.rowCount) return null;
+        const allItems = JSON.parse(claim.rows[0].items || '[]');
+        const selected = allItems.filter((it, i) => selectedFlags ? !!selectedFlags[i] : it.selected);
+        if (!selected.length) throw ZERO_SELECTED;
+        const allowlist = await getAllowlist();
+        const buyerName = allowlist.get(claim.rows[0].line_user_id) || 'LINE';
+        await insertSelectedExpenses(client, slipId, buyerName, selected);
+        return selected;
+      });
+      if (!result) return res.status(409).json({ error: 'This slip was already confirmed or the link is invalid.' });
+      const total = result.reduce((s, i) => s + i.amount, 0);
+      await logActivity('line-chat', 'EXPENSE', `slip #${slipId}: ${result.length} items, ${total} THB (LIFF)`);
+      res.json({ ok: true, saved: result, total });
+    } catch (e) {
+      if (e === ZERO_SELECTED) return res.status(400).json({ error: 'ยังไม่มีรายการที่เลือกเลย' });
+      fail(res, e);
+    }
   });
 }

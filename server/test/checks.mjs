@@ -322,37 +322,72 @@ export async function runChecks(BASE) {
   ok('redelivered message stays a single slip',
     (await getSlips()).filter(s => s.line_message_id === 'lm-1').length === 1);
 
-  await webhook([postbackEvent('U_EXP_1', `exp:t:${slip.id}:1`)]);
-  await sleep(400);
-  let items = JSON.parse(((await getSlips()).find(s => s.id === slip.id))?.items || '[]');
-  ok('toggle postback deselects item 1', items[0]?.selected === true && items[1]?.selected === false, JSON.stringify(items));
+  console.log('\n[12b] chat-slips LIFF checklist (?flow=chat — replaces the old per-item postback toggle)');
+  r = await fetch(`${BASE}/api/line/chat-slips/${slip.id}?token=wrong`);
+  ok('chat-slips GET wrong token -> 404', r.status === 404, `got ${r.status}`);
+  r = await fetch(`${BASE}/api/line/chat-slips/${slip.id}?token=${slip.confirm_token}`);
+  let chatGet = await r.json();
+  ok('chat-slips GET returns both items', r.status === 200 && chatGet.items?.length === 2, JSON.stringify(chatGet));
 
-  await webhook([postbackEvent('U_OTHER', `exp:c:${slip.id}`)]);
+  r = await fetch(`${BASE}/api/line/chat-slips/${slip.id}/confirm`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: 'wrong', selected: [true, false] })
+  });
+  ok('chat-slips confirm wrong token -> 409', r.status === 409, `got ${r.status}`);
+
+  r = await fetch(`${BASE}/api/line/chat-slips/${slip.id}/confirm`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: slip.confirm_token, selected: [true, false] })
+  });
+  let chatConfirm = await r.json();
+  ok('chat-slips confirm saves only the checked item',
+    r.status === 200 && chatConfirm.saved?.length === 1 && chatConfirm.saved[0].description === 'กาแฟ',
+    JSON.stringify(chatConfirm));
+
+  let chatExpenses = ((await req('GET', '/api/expenses', undefined, admin)).data || [])
+    .filter(e => e.note === `LINE chat slip #${slip.id}`);
+  ok('saved expense has the selected item only, buyer from allowlist',
+    chatExpenses.length === 1 && chatExpenses[0]?.description === 'กาแฟ' && Number(chatExpenses[0]?.amount) === 40 && chatExpenses[0]?.buyer === 'Tester',
+    JSON.stringify(chatExpenses));
+
+  r = await fetch(`${BASE}/api/line/chat-slips/${slip.id}/confirm`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: slip.confirm_token, selected: [true, true] })
+  });
+  ok('chat-slips confirm on an already-completed slip -> 409', r.status === 409, `got ${r.status}`);
+
+  console.log('\n[12c] postback confirm-all / cancel path (separate slip)');
+  ok('second text event acked 200', await webhook([textEvent('U_EXP_1', 'lm-2', 'น้ำแข็ง 20, นม 30')]) === 200);
+  let slip2;
+  for (let i = 0; i < 20 && !slip2; i++) {
+    await sleep(200);
+    slip2 = (await getSlips()).find(s => s.line_message_id === 'lm-2' && s.status === 'pending');
+  }
+  ok('second pending slip created with 2 items', !!slip2 && JSON.parse(slip2.items || '[]').length === 2);
+
+  await webhook([postbackEvent('U_OTHER', `exp:c:${slip2.id}`)]);
   await sleep(400);
   ok('confirm from a different user is ignored',
-    ((await getSlips()).find(s => s.id === slip.id))?.status === 'pending');
+    ((await getSlips()).find(s => s.id === slip2.id))?.status === 'pending');
 
   const expensesBefore = ((await req('GET', '/api/expenses', undefined, admin)).data || [])
-    .filter(e => e.note === `LINE chat slip #${slip.id}`).length;
+    .filter(e => e.note === `LINE chat slip #${slip2.id}`).length;
   await Promise.all([
-    webhook([postbackEvent('U_EXP_1', `exp:c:${slip.id}`)]),
-    webhook([postbackEvent('U_EXP_1', `exp:c:${slip.id}`)])
+    webhook([postbackEvent('U_EXP_1', `exp:c:${slip2.id}`)]),
+    webhook([postbackEvent('U_EXP_1', `exp:c:${slip2.id}`)])
   ]);
   await sleep(600);
-  const slipDone = (await getSlips()).find(s => s.id === slip.id);
-  const chatExpenses = ((await req('GET', '/api/expenses', undefined, admin)).data || [])
-    .filter(e => e.note === `LINE chat slip #${slip.id}`);
-  ok('concurrent double-confirm completes the slip exactly once',
-    slipDone?.status === 'completed' && chatExpenses.length - expensesBefore === 1,
-    JSON.stringify({ status: slipDone?.status, rows: chatExpenses.length }));
-  ok('saved expense has the selected item only, buyer from allowlist',
-    chatExpenses[0]?.description === 'กาแฟ' && Number(chatExpenses[0]?.amount) === 40 && chatExpenses[0]?.buyer === 'Tester',
-    JSON.stringify(chatExpenses[0]));
+  const slip2Done = (await getSlips()).find(s => s.id === slip2.id);
+  const chat2Expenses = ((await req('GET', '/api/expenses', undefined, admin)).data || [])
+    .filter(e => e.note === `LINE chat slip #${slip2.id}`);
+  ok('concurrent double-confirm (postback, both items) completes the slip exactly once',
+    slip2Done?.status === 'completed' && chat2Expenses.length - expensesBefore === 2,
+    JSON.stringify({ status: slip2Done?.status, rows: chat2Expenses.length }));
 
-  await webhook([postbackEvent('U_EXP_1', `exp:x:${slip.id}`)]);
+  await webhook([postbackEvent('U_EXP_1', `exp:x:${slip2.id}`)]);
   await sleep(400);
   ok('cancel on a completed slip changes nothing',
-    ((await getSlips()).find(s => s.id === slip.id))?.status === 'completed');
+    ((await getSlips()).find(s => s.id === slip2.id))?.status === 'completed');
 
   return { pass, fail };
 }

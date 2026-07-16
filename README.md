@@ -57,7 +57,11 @@ access flag; the `users` table is Admin-only).
   `LINE_CHANNEL_ID` if the customer rewards LIFF is in use, `LINE_SLIP_SECRET`
   if the Make.com expense-slip automation (below) is in use, and
   `LINE_CHANNEL_SECRET` + `LINE_CHANNEL_ACCESS_TOKEN` + `OPENAI_API_KEY` if the
-  in-chat LINE expense bot (below) is in use.
+  in-chat LINE expense bot (below) is in use, and additionally
+  `LINE_EXPENSE_LIFF_ID` (same value as the client build's
+  `VITE_EXPENSE_LIFF_ID`, see below) to get the bot's "แก้ไขรายการ" button —
+  without it the Flex card just omits that button and only offers
+  บันทึกทั้งหมด/ยกเลิก.
 - Satellite apps → build (`npm run build`) and serve the `dist/` from the hub or a
   static host over **HTTPS** (required for the PWA service worker). Point them at
   the hub with `VITE_API_BASE=https://your-hub` at build time.
@@ -157,10 +161,16 @@ local-dev fallback, same as `/customer.html`.
 The newer, chat-only expense intake (`server/lineExpense.js`): an allow-listed
 staff member sends a receipt photo — or a text like `ค่ากาแฟ 40 ไข่ 60` — to the
 shop's LINE OA. The hub receives the webhook directly, has OpenAI GPT-4o-mini
-extract categorized line items, and replies with a Flex card where each item
-can be toggled off. Confirming records one `expenses` row per selected item and
-replies with a summary. Reward customers share the OA; anyone not in the
-allowlist is ignored without a reply, so the bot is invisible to them.
+extract categorized line items, and replies with a Flex card listing them.
+Tapping **บันทึกทั้งหมด** records every item as one `expenses` row each, in a
+single transaction, and replies with a summary — the common case is one tap.
+Removing an item first goes through the **แก้ไขรายการ** button instead of a
+postback-per-item toggle: LINE can't edit a message it already sent, so every
+toggle used to mean waiting for a whole new chat message. That button opens
+the expense-review LIFF page (`?flow=chat`, same page/app as the Make.com flow
+below) with plain checkboxes — instant, no round trip until the one final
+save. Reward customers share the OA; anyone not in the allowlist is ignored
+without a reply, so the bot is invisible to them.
 
 Setup:
 
@@ -178,7 +188,13 @@ Setup:
 4. In LINE Official Account Manager, turn **off** auto-reply/greeting messages
    so canned replies don't interleave with the bot's cards (note this affects
    the whole OA, including reward customers).
-5. In Mother → Settings → Store Options, fill **LINE expense users** with
+5. **แก้ไขรายการ button (optional but recommended)** — if the expense-review
+   LIFF page from the section above is already deployed, set hub env
+   `LINE_EXPENSE_LIFF_ID` to the same LIFF id as that page's
+   `VITE_EXPENSE_LIFF_ID`. It's the same deployed page and same LIFF app —
+   nothing new to create. Without this env var the card just skips the
+   button, offering only บันทึกทั้งหมด/ยกเลิก.
+6. In Mother → Settings → Store Options, fill **LINE expense users** with
    `U<lineUserId>:BuyerName` entries (comma separated). To find a user's ID:
    have them message the OA once and read it from the hub log
    (`ignored message from non-allowlisted user U...`), or have an

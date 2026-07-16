@@ -27,3 +27,11 @@ export const lineSlipApi = {
   get: (id, token) => req('GET', `/api/line/slips/${encodeURIComponent(id)}?token=${encodeURIComponent(token)}`),
   confirm: (id, token, body) => req('POST', `/api/line/slips/${encodeURIComponent(id)}/confirm`, { ...body, token })
 };
+
+// The in-chat LINE bot's checklist page (?flow=chat) — a slip analyzed into
+// multiple line items, edited here with plain checkboxes instead of a
+// postback-per-tap round trip through the chat.
+export const lineChatSlipApi = {
+  get: (id, token) => req('GET', `/api/line/chat-slips/${encodeURIComponent(id)}?token=${encodeURIComponent(token)}`),
+  confirm: (id, token, selected) => req('POST', `/api/line/chat-slips/${encodeURIComponent(id)}/confirm`, { token, selected })
+};

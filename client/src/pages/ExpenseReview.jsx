@@ -1,38 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { lineSlipApi } from '../lib/lineSlipApi.js';
 import { money } from '../lib/helpers.js';
-
-// Load the official LIFF SDK from LINE's CDN on demand (no bundled
-// dependency) — mirrors CustomerPortal.jsx. Only used here to send the
-// "saved!" chat message and auto-close the window; the review form itself
-// works fine outside LINE too (e.g. testing the link in a desktop browser).
-function loadLiff() {
-  if (window.liff) return Promise.resolve(window.liff);
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://static.line-scdn.net/liff/edge/2/sdk.js';
-    s.onload = () => resolve(window.liff);
-    s.onerror = () => reject(new Error('Failed to load LINE SDK'));
-    document.head.appendChild(s);
-  });
-}
-
-// id/token normally arrive directly (?id=...&token=...) from the Flex
-// Message button, but can arrive wrapped inside LIFF's redirect round-trip
-// (?liff.state=...%3Fid%3D...%26token%3D...) — same edge case CustomerPortal
-// handles for its ?claim= token.
-function readParams() {
-  const direct = new URLSearchParams(window.location.search);
-  if (direct.get('id')) return { id: direct.get('id'), token: direct.get('token') || '' };
-  const state = direct.get('liff.state');
-  if (state) {
-    const decoded = decodeURIComponent(state);
-    const qs = decoded.includes('?') ? decoded.slice(decoded.indexOf('?') + 1) : decoded.replace(/^\//, '');
-    const params = new URLSearchParams(qs);
-    return { id: params.get('id'), token: params.get('token') || '' };
-  }
-  return { id: null, token: '' };
-}
+import { loadLiff, readIdTokenParams as readParams } from '../lib/liff.js';
 
 const FALLBACK_CATEGORIES = ['ค่าอาหาร', 'ค่าเดินทาง', 'ซื้อของเข้าร้าน', 'อื่นๆ'];
 
