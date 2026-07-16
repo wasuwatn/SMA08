@@ -48,6 +48,14 @@ export async function hashPassword(password) {
   return bcrypt.hash(String(password), 10);
 }
 
+// PIN never has a legacy plaintext/SHA-256 form to migrate — always bcrypt,
+// always hashed with hashPassword() before storage. `storedHash` is null for
+// a staff member who hasn't set a PIN yet.
+export async function verifyPin(pin, storedHash) {
+  if (!storedHash) return false;
+  return bcrypt.compare(String(pin), storedHash);
+}
+
 // Returns { ok, needsRehash } - ok is true if `password` matches `storedHash`,
 // which may be a bcrypt hash or a legacy SHA-256 hash.
 export async function verifyPassword(password, storedHash) {
@@ -66,11 +74,16 @@ export async function verifyPassword(password, storedHash) {
  *  - columns: ordered list of all columns (used for generic CRUD)
  */
 export const TABLE_CONFIG = {
+  // pin: bcrypt-hashed 4-digit PIN for POS satellite-app login (POST
+  // /api/auth/pin-login in index.js) — nullable, a staff member can't use
+  // PIN login until an admin sets one from the Users page. Separate from
+  // `password`, which stays the credential for this app and for changing
+  // one's own PIN.
   users: {
     pk: 'username', auto: false,
-    columns: ['username', 'password', 'role', 'access'],
+    columns: ['username', 'password', 'role', 'access', 'pin'],
     ddl: `CREATE TABLE IF NOT EXISTS users (
-      username TEXT PRIMARY KEY, password TEXT, role TEXT, access TEXT)`
+      username TEXT PRIMARY KEY, password TEXT, role TEXT, access TEXT, pin TEXT)`
   },
   // current_theme was dropped (Phase-1 cleanup below) — theme now lives in
   // localStorage only (see chooseTheme() in Settings.jsx).

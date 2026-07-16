@@ -14,10 +14,10 @@ const ACCESS = [
 export default function Users() {
   const { data, insert, update, remove, pushToast } = useData();
   const { pageRows, page, setPage, total } = useTable(data.users);
-  const [editing, setEditing] = useState(null); // {username, role, access:[], password, _isNew}
+  const [editing, setEditing] = useState(null); // {username, role, access:[], password, pin, _isNew}
 
-  const openNew = () => setEditing({ username: '', role: 'User', access: [], password: '', _isNew: true });
-  const openEdit = (u) => setEditing({ username: u.username, role: u.role, access: u.access.split(',').filter(Boolean), password: '', _isNew: false });
+  const openNew = () => setEditing({ username: '', role: 'User', access: [], password: '', pin: '', _isNew: true });
+  const openEdit = (u) => setEditing({ username: u.username, role: u.role, access: u.access.split(',').filter(Boolean), password: '', pin: '', _isNew: false });
 
   const toggle = (key) => setEditing(e => ({ ...e, access: e.access.includes(key) ? e.access.filter(a => a !== key) : [...e.access, key] }));
 
@@ -25,8 +25,10 @@ export default function Users() {
     const e = editing;
     if (e._isNew && !e.username.trim()) return pushToast('Username is required.', 'warning');
     if (e._isNew && !e.password) return pushToast('Password is required for new accounts.', 'warning');
+    if (e.pin && !/^\d{4}$/.test(e.pin)) return pushToast('PIN must be exactly 4 digits.', 'warning');
     const payload = { role: e.role, access: e.access.join(',') };
     if (e.password) payload.password = e.password;
+    if (e.pin) payload.pin = e.pin;
     if (e._isNew) {
       if (data.users.some(u => u.username.toLowerCase() === e.username.trim().toLowerCase())) return pushToast('That username already exists.', 'warning');
       await insert('users', { username: e.username.trim(), ...payload });
@@ -90,6 +92,17 @@ export default function Users() {
           </div>
           <div className="field"><label>{editing._isNew ? 'Password' : 'New Password (leave blank to keep)'}</label>
             <input type="password" className="form-control" value={editing.password} onChange={(e) => setEditing(s => ({ ...s, password: e.target.value }))} />
+          </div>
+          <div className="field"><label>{editing._isNew ? 'PIN (4 digits, optional)' : 'New PIN (leave blank to keep)'}</label>
+            <input
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={4}
+              className="form-control"
+              value={editing.pin}
+              onChange={(e) => setEditing(s => ({ ...s, pin: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
+            />
+            <p className="helper-text">Used to log into the POS app. Leave blank if this staff member won't use POS PIN login.</p>
           </div>
           <p className="card-title-sm">Tab Permissions</p>
           <p className="helper-text mb-12">Admins always have full access regardless of these checkboxes.</p>
