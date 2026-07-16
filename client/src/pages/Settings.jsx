@@ -7,6 +7,7 @@ export default function Settings() {
   const { theme, setTheme, settings, data, update, reload, pushToast } = useData();
   const [sweetness, setSweetness] = useState(settings.sweetness_levels || '');
   const [buyers, setBuyers] = useState(settings.buyers || '');
+  const [expenseLineUsers, setExpenseLineUsers] = useState(settings.expense_line_users || '');
   // Receipt & payment (printed on the 58mm slip; PromptPay ID drives the POS QR)
   const [shopName, setShopName] = useState(settings.shop_name || '');
   const [shopAddress, setShopAddress] = useState(settings.shop_address || '');
@@ -20,7 +21,7 @@ export default function Settings() {
   const jsonRef = useRef(null);
 
   const saveSettings = async () => {
-    await update('settings', settings.id, { sweetness_levels: sweetness, buyers });
+    await update('settings', settings.id, { sweetness_levels: sweetness, buyers, expense_line_users: expenseLineUsers });
     pushToast('Store settings saved.', 'success');
   };
 
@@ -163,6 +164,11 @@ export default function Settings() {
         </div>
         <div className="field"><label>Buyers (comma separated)</label>
           <input className="form-control" value={buyers} onChange={(e) => setBuyers(e.target.value)} />
+        </div>
+        <div className="field"><label>LINE expense users (Uxxxx:ชื่อ, comma separated)</label>
+          <input className="form-control" value={expenseLineUsers} onChange={(e) => setExpenseLineUsers(e.target.value)}
+            placeholder="U1234abcd:สมชาย, U5678efgh:สมหญิง" />
+          <small className="text-muted">ผู้ที่บันทึกรายจ่ายผ่านแชท LINE OA ได้ — ดู user ID ได้จาก server log เมื่อคนที่ยังไม่อยู่ในรายชื่อทักแชทมา หรือให้คนที่อยู่แล้วพิมพ์ myid</small>
         </div>
         <button className="btn btn-primary" onClick={saveSettings}><i className="fa-solid fa-floppy-disk"></i> Save Options</button>
       </div>

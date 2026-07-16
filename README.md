@@ -54,8 +54,10 @@ access flag; the `users` table is Admin-only).
 
 - Hub → any Node host (Render/Railway/Fly). Set `DATABASE_URL`, `JWT_SECRET`, and
   `CORS_ORIGIN` (comma-separated origins of the satellite apps). Set
-  `LINE_CHANNEL_ID` if the customer rewards LIFF is in use, and `LINE_SLIP_SECRET`
-  if the Make.com expense-slip automation (below) is in use.
+  `LINE_CHANNEL_ID` if the customer rewards LIFF is in use, `LINE_SLIP_SECRET`
+  if the Make.com expense-slip automation (below) is in use, and
+  `LINE_CHANNEL_SECRET` + `LINE_CHANNEL_ACCESS_TOKEN` + `OPENAI_API_KEY` if the
+  in-chat LINE expense bot (below) is in use.
 - Satellite apps → build (`npm run build`) and serve the `dist/` from the hub or a
   static host over **HTTPS** (required for the PWA service worker). Point them at
   the hub with `VITE_API_BASE=https://your-hub` at build time.
@@ -149,6 +151,44 @@ message / auto-close) in the Vercel project's settings, then:
 
 The hub's own `/expense-review.html` route is left in place as a harmless
 local-dev fallback, same as `/customer.html`.
+
+### In-chat LINE expense bot (no LIFF, no Make.com)
+
+The newer, chat-only expense intake (`server/lineExpense.js`): an allow-listed
+staff member sends a receipt photo — or a text like `ค่ากาแฟ 40 ไข่ 60` — to the
+shop's LINE OA. The hub receives the webhook directly, has OpenAI GPT-4o-mini
+extract categorized line items, and replies with a Flex card where each item
+can be toggled off. Confirming records one `expenses` row per selected item and
+replies with a summary. Reward customers share the OA; anyone not in the
+allowlist is ignored without a reply, so the bot is invisible to them.
+
+Setup:
+
+1. **OpenAI**: create an API key at platform.openai.com → hub env
+   `OPENAI_API_KEY`.
+2. **LINE Developers Console**: open the OA's **Messaging API** channel (this
+   is a different channel type from the LINE-Login/LIFF channel that
+   `LINE_CHANNEL_ID` belongs to; create one for the OA if it doesn't exist).
+   Copy the **channel secret** → hub env `LINE_CHANNEL_SECRET`; issue a
+   long-lived **channel access token** → hub env `LINE_CHANNEL_ACCESS_TOKEN`.
+3. Set the channel's **Webhook URL** to
+   `https://<hub-public-url>/api/line/webhook`, enable **Use webhook**, press
+   **Verify** (expects 200). Enabling **Redelivery** is safe — deliveries are
+   idempotent by LINE message id.
+4. In LINE Official Account Manager, turn **off** auto-reply/greeting messages
+   so canned replies don't interleave with the bot's cards (note this affects
+   the whole OA, including reward customers).
+5. In Mother → Settings → Store Options, fill **LINE expense users** with
+   `U<lineUserId>:BuyerName` entries (comma separated). To find a user's ID:
+   have them message the OA once and read it from the hub log
+   (`ignored message from non-allowlisted user U...`), or have an
+   already-listed user type `myid` in the chat.
+
+Cold starts (Render free tier) are covered by the same cron-job.org keep-alive
+described above; LINE's webhook redelivery bridges any remaining gap.
+
+The Make.com + LIFF flow above still works independently — both write to the
+same `pending_slips` table and `expenses` ledger.
 
 ### Kafe POS (coffee-pos-buddy) — the iPhone-first satellite
 

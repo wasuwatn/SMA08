@@ -45,7 +45,11 @@ async function main() {
       DATABASE_URL: `postgresql://postgres:test@localhost:${PG_PORT}/postgres`,
       JWT_SECRET: 'test-secret-not-for-production',
       PGSSLMODE: 'disable',
-      PORT: String(API_PORT)
+      PORT: String(API_PORT),
+      // Enables the LINE expense webhook route. LINE_CHANNEL_ACCESS_TOKEN and
+      // OPENAI_API_KEY stay unset so the dev fallbacks engage (replies are
+      // logged instead of sent; text analysis uses the offline regex parser).
+      LINE_CHANNEL_SECRET: 'test-line-secret'
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });

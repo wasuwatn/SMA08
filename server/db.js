@@ -87,13 +87,19 @@ export const TABLE_CONFIG = {
   },
   // current_theme was dropped (Phase-1 cleanup below) — theme now lives in
   // localStorage only (see chooseTheme() in Settings.jsx).
+  // expense_line_users: allowlist for the in-chat LINE expense bot —
+  // comma-separated "U<lineUserId>:BuyerName" entries (name optional). Only
+  // these LINE users can log expenses by chatting with the OA; everyone else
+  // (reward customers on the same OA) is silently ignored.
   settings: {
     pk: 'id', auto: true,
     columns: ['id', 'sweetness_levels', 'buyers', 'logo',
-      'shop_name', 'shop_address', 'shop_phone', 'promptpay_id', 'receipt_footer'],
+      'shop_name', 'shop_address', 'shop_phone', 'promptpay_id', 'receipt_footer',
+      'expense_line_users'],
     ddl: `CREATE TABLE IF NOT EXISTS settings (
       id SERIAL PRIMARY KEY, sweetness_levels TEXT, buyers TEXT, logo TEXT,
-      shop_name TEXT, shop_address TEXT, shop_phone TEXT, promptpay_id TEXT, receipt_footer TEXT)`
+      shop_name TEXT, shop_address TEXT, shop_phone TEXT, promptpay_id TEXT, receipt_footer TEXT,
+      expense_line_users TEXT)`
   },
   materials: {
     pk: 'id', auto: false,
@@ -311,22 +317,26 @@ export const TABLE_CONFIG = {
     columns: ['id', 'created_at'],
     ddl: `CREATE TABLE IF NOT EXISTS processed_txns (id TEXT PRIMARY KEY, created_at TIMESTAMPTZ)`
   },
-  // "Pending slip" bucket for the LINE x Make.com receipt-OCR expense intake
-  // (see INTEGRATION_PLAN.md Phase 1). Make.com posts a row here after OCR;
-  // `confirm_token` gates both the read and the confirm write so the LIFF
-  // review page needs no separate login — the token IS the auth for that one
-  // slip. `line_message_id` is UNIQUE so a retried webhook delivery can't
-  // create a second pending row for the same physical slip. `expense_id` is
-  // filled in once the slip is confirmed and turned into a real `expenses` row.
+  // "Pending slip" bucket shared by both expense-intake flows: the LINE x
+  // Make.com OCR + LIFF review flow (see INTEGRATION_PLAN.md Phase 1) and the
+  // in-chat LINE bot (server/lineExpense.js). `confirm_token` gates the LIFF
+  // page's read/confirm — the token IS the auth for that one slip. The chat
+  // flow instead stores its analyzed line items in `items` (JSON array of
+  // {description, amount, category, selected}) and authenticates postbacks by
+  // matching `line_user_id`. `line_message_id` is UNIQUE so a retried webhook
+  // delivery can't create a second pending row for the same physical slip.
+  // `expense_id` is filled in once the slip is confirmed into `expenses`.
   pending_slips: {
     pk: 'id', auto: true,
     columns: ['id', 'line_message_id', 'line_user_id', 'amount', 'merchant', 'category',
-      'slip_image_url', 'ocr_raw', 'status', 'confirm_token', 'expense_id', 'created_at', 'confirmed_at'],
+      'slip_image_url', 'ocr_raw', 'status', 'confirm_token', 'expense_id', 'created_at', 'confirmed_at',
+      'items'],
     ddl: `CREATE TABLE IF NOT EXISTS pending_slips (
       id SERIAL PRIMARY KEY, line_message_id TEXT UNIQUE, line_user_id TEXT,
       amount DOUBLE PRECISION DEFAULT 0, merchant TEXT, category TEXT,
       slip_image_url TEXT, ocr_raw TEXT, status TEXT DEFAULT 'pending',
-      confirm_token TEXT, expense_id INTEGER, created_at TIMESTAMPTZ, confirmed_at TIMESTAMPTZ)`
+      confirm_token TEXT, expense_id INTEGER, created_at TIMESTAMPTZ, confirmed_at TIMESTAMPTZ,
+      items TEXT)`
   }
 };
 

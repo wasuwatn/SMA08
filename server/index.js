@@ -12,6 +12,7 @@ import {
   pool, initDb, withTransaction, TABLES, TABLE_CONFIG, listRows, insertRow, getRow,
   updateRow, deleteRow, hashPassword, verifyPassword, verifyPin, logActivity, claimTxn, adjustStock
 } from './db.js';
+import { registerLineExpenseRoutes } from './lineExpense.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -55,7 +56,15 @@ const corsOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
   : true;
 app.use(cors({ origin: corsOrigins }));
-app.use(express.json({ limit: '25mb' }));
+// The LINE Messaging API webhook signs the exact raw request bytes
+// (x-line-signature = HMAC-SHA256 over the body), so stash the raw buffer for
+// that one path — parsed-then-restringified JSON wouldn't verify.
+app.use(express.json({
+  limit: '25mb',
+  verify: (req, _res, buf) => {
+    if (req.originalUrl.startsWith('/api/line/webhook')) req.rawBody = buf;
+  }
+}));
 
 // Serve the built client (if present) and fall back to it for client-side routing.
 if (fs.existsSync(CLIENT_DIST)) {
@@ -619,6 +628,12 @@ app.post('/api/line/slips/:id/confirm', async (req, res) => {
     fail(res, e);
   }
 });
+
+// In-chat LINE expense bot (send a receipt photo / text to the OA, pick items
+// to record, all inside LINE chat). Mounted before the staff guard below —
+// LINE's webhook carries no JWT; it authenticates with x-line-signature.
+// See server/lineExpense.js.
+registerLineExpenseRoutes(app);
 
 // All routes below require a valid STAFF token. Customer tokens are rejected
 // here so they can't reach the generic CRUD / checkout routes.

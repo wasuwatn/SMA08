@@ -2,6 +2,8 @@
 // as a function (rather than a script that calls process.exit) so run.mjs can
 // own server/DB lifecycle and only decide the final exit code once, after
 // tearing both down.
+import crypto from 'node:crypto';
+
 export async function runChecks(BASE) {
   let pass = 0, fail = 0;
   const ok = (name, cond, extra = '') => {
@@ -269,6 +271,88 @@ export async function runChecks(BASE) {
     r.status === 200 && !('pin' in r.data), `got ${JSON.stringify(r.data)}`);
   r = await req('GET', '/api/users', undefined, admin);
   ok('GET /api/users never leaks pin hash', r.status === 200 && r.data.every(u => !('pin' in u)));
+
+  console.log('\n[12] LINE expense webhook (in-chat bot)');
+  // Signature = HMAC-SHA256 over the exact raw body with the channel secret
+  // (run.mjs sets LINE_CHANNEL_SECRET='test-line-secret'). Event processing is
+  // post-ack (the route 200s before working), so assertions poll briefly.
+  const lineSig = (raw) => crypto.createHmac('sha256', 'test-line-secret').update(raw).digest('base64');
+  const webhook = async (events, { badSig = false } = {}) => {
+    const raw = JSON.stringify({ events });
+    const res = await fetch(BASE + '/api/line/webhook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-line-signature': badSig ? 'AAAA' : lineSig(raw) },
+      body: raw
+    });
+    return res.status;
+  };
+  const sleep = (ms) => new Promise((r2) => setTimeout(r2, ms));
+  const getSlips = async () => (await req('GET', '/api/pending_slips', undefined, admin)).data || [];
+  const textEvent = (userId, msgId, text) => ({
+    type: 'message', replyToken: 'rt-' + msgId, source: { userId },
+    message: { id: msgId, type: 'text', text }
+  });
+  const postbackEvent = (userId, data) => ({
+    type: 'postback', replyToken: 'rt-pb-' + Math.random().toString(36).slice(2), source: { userId },
+    postback: { data }
+  });
+
+  ok('bad signature -> 403', await webhook([textEvent('U_EXP_1', 'lm-sig', 'กาแฟ 40')], { badSig: true }) === 403);
+
+  r = await req('PUT', '/api/settings/1', { expense_line_users: 'U_EXP_1:Tester' }, admin);
+  ok('allowlist saved to settings', r.status === 200, `got ${r.status}`);
+
+  ok('stranger event acked 200', await webhook([textEvent('U_STRANGER', 'lm-str-1', 'กาแฟ 40')]) === 200);
+  await sleep(400);
+  ok('stranger created no pending slip', !(await getSlips()).some(s => s.line_user_id === 'U_STRANGER'));
+
+  ok('allowlisted text event acked 200', await webhook([textEvent('U_EXP_1', 'lm-1', 'กาแฟ 40, ไข่ 60')]) === 200);
+  let slip;
+  for (let i = 0; i < 20 && !slip; i++) { // wait for post-ack processing
+    await sleep(200);
+    slip = (await getSlips()).find(s => s.line_message_id === 'lm-1' && s.status === 'pending');
+  }
+  ok('pending slip created with 2 items, total 100',
+    !!slip && JSON.parse(slip.items || '[]').length === 2 && Number(slip.amount) === 100,
+    JSON.stringify({ items: slip?.items, amount: slip?.amount }));
+
+  await webhook([{ ...textEvent('U_EXP_1', 'lm-1', 'กาแฟ 40, ไข่ 60'), deliveryContext: { isRedelivery: true } }]);
+  await webhook([textEvent('U_EXP_1', 'lm-1', 'กาแฟ 40, ไข่ 60')]); // same message.id, no redelivery flag
+  await sleep(400);
+  ok('redelivered message stays a single slip',
+    (await getSlips()).filter(s => s.line_message_id === 'lm-1').length === 1);
+
+  await webhook([postbackEvent('U_EXP_1', `exp:t:${slip.id}:1`)]);
+  await sleep(400);
+  let items = JSON.parse(((await getSlips()).find(s => s.id === slip.id))?.items || '[]');
+  ok('toggle postback deselects item 1', items[0]?.selected === true && items[1]?.selected === false, JSON.stringify(items));
+
+  await webhook([postbackEvent('U_OTHER', `exp:c:${slip.id}`)]);
+  await sleep(400);
+  ok('confirm from a different user is ignored',
+    ((await getSlips()).find(s => s.id === slip.id))?.status === 'pending');
+
+  const expensesBefore = ((await req('GET', '/api/expenses', undefined, admin)).data || [])
+    .filter(e => e.note === `LINE chat slip #${slip.id}`).length;
+  await Promise.all([
+    webhook([postbackEvent('U_EXP_1', `exp:c:${slip.id}`)]),
+    webhook([postbackEvent('U_EXP_1', `exp:c:${slip.id}`)])
+  ]);
+  await sleep(600);
+  const slipDone = (await getSlips()).find(s => s.id === slip.id);
+  const chatExpenses = ((await req('GET', '/api/expenses', undefined, admin)).data || [])
+    .filter(e => e.note === `LINE chat slip #${slip.id}`);
+  ok('concurrent double-confirm completes the slip exactly once',
+    slipDone?.status === 'completed' && chatExpenses.length - expensesBefore === 1,
+    JSON.stringify({ status: slipDone?.status, rows: chatExpenses.length }));
+  ok('saved expense has the selected item only, buyer from allowlist',
+    chatExpenses[0]?.description === 'กาแฟ' && Number(chatExpenses[0]?.amount) === 40 && chatExpenses[0]?.buyer === 'Tester',
+    JSON.stringify(chatExpenses[0]));
+
+  await webhook([postbackEvent('U_EXP_1', `exp:x:${slip.id}`)]);
+  await sleep(400);
+  ok('cancel on a completed slip changes nothing',
+    ((await getSlips()).find(s => s.id === slip.id))?.status === 'completed');
 
   return { pass, fail };
 }
