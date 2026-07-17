@@ -128,8 +128,14 @@ For a photo of an itemized receipt (e.g. a supermarket/wholesale tax invoice wit
   plain number, so it can be cross-checked against the sum of the items you extracted. If no total is legible,
   use null.
 
+NEVER invent or guess a product name, quantity, or unit that is not actually legible in the image. If a line's
+amount is readable but its description is too blurry/small/rotated to make out, use the literal description
+"รายการที่อ่านไม่ชัด" for that line instead of fabricating a specific, plausible-sounding product (e.g. do not
+write "ไข่ 10 ฟอง" or "น้ำมันพืช 1500 มิลลิลิตร" unless those exact words are legible on the receipt). A shorter,
+honest list — or one with several "รายการที่อ่านไม่ชัด" placeholders — is far more useful than a longer list of
+confident-sounding guesses. This applies to "merchant" too: leave it "" rather than guessing a store name.
+
 Choose "category" as the closest match from the allowed list; use "Other" when nothing fits.
-"merchant" is the store/payee name if visible, else "".
 If the input contains no expense items at all, return an empty "items" array and receipt_total null.
 Keep descriptions short (under 40 characters). Return at most ${MAX_ITEMS} items — merge only the smallest/least
 distinct lines if there are genuinely more than that, and prefer merging over dropping items silently.`;
