@@ -160,7 +160,7 @@ local-dev fallback, same as `/customer.html`.
 
 The newer, chat-only expense intake (`server/lineExpense.js`): an allow-listed
 staff member sends a receipt photo — or a text like `ค่ากาแฟ 40 ไข่ 60` — to the
-shop's LINE OA. The hub receives the webhook directly, has OpenAI GPT-4o-mini
+shop's LINE OA. The hub receives the webhook directly, has OpenAI GPT-4o
 extract categorized line items, and replies with a Flex card listing them.
 Tapping **บันทึกทั้งหมด** records every item as one `expenses` row each, in a
 single transaction, and replies with a summary — the common case is one tap.

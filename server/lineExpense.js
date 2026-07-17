@@ -1,5 +1,5 @@
 // In-chat LINE expense bot: an allow-listed staff member sends a receipt
-// photo (or a text like "ค่ากาแฟ 40 ไข่ 60") to the shop's LINE OA, GPT-4o-mini
+// photo (or a text like "ค่ากาแฟ 40 ไข่ 60") to the shop's LINE OA, GPT-4o
 // extracts categorized line items, the bot replies with a Flex card where each
 // item can be toggled off, and confirming records one `expenses` row per
 // selected item — the whole loop lives in the chat, no LIFF page needed. The
@@ -171,7 +171,10 @@ async function analyzeExpense({ text, image }) {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_API_KEY}` },
     signal: AbortSignal.timeout(45000),
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      // Full gpt-4o, not -mini: this reads rotated/small/blurry receipt
+      // photos noticeably more reliably, which matters more here than the
+      // extra cost per call (still well under a baht per receipt).
+      model: 'gpt-4o',
       max_tokens: 3000,
       response_format: {
         type: 'json_schema',
