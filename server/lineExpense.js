@@ -116,24 +116,34 @@ The input is either a photo of a receipt / payment slip, or a short Thai/English
 For a text message like "ค่ากาแฟ 40 ไข่ 60": split into one item per name+amount pair (that example has TWO items).
 Set "receipt_total" to null for text input — there is no printed total to check against.
 
-For a photo of an itemized receipt (e.g. a supermarket/wholesale tax invoice with many lines):
-- Extract EVERY purchasable line between the header and the total/subtotal line. Do not skip lines because
-  they look similar to each other or because there are many of them — a long receipt commonly has 10-20 items.
+For a photo of an itemized receipt (e.g. a supermarket/wholesale tax invoice with many lines), work in two passes:
+
+PASS 1 — TRANSCRIBE, don't identify. For each line, look only at the literal glyphs printed on the paper and
+transcribe them character-by-character, the way a copy typist would, even if the printed text is itself an
+abbreviated code (e.g. "ผงชูรสอช0.5กก" or a partial/cut-off word). Do NOT use outside knowledge of what Thai
+supermarket receipts "usually" contain to fill in a plausible real product/brand name — a transcription of
+garbled or partial characters is correct output; a fluent, confident brand name that isn't what's actually
+printed is wrong output, even if it happens to be a real product. If specific glyphs genuinely cannot be
+resolved at all (not even partially) for a line whose amount you can still read, transcribe only what you can
+make out and pad the rest with "รายการที่อ่านไม่ชัด" rather than switching to guessing.
+- Extract EVERY purchasable line between the header and the total/subtotal line this way. Do not skip lines
+  because they look similar to each other or because there are many of them — a long receipt commonly has
+  10-20 items.
 - Each line typically ends with a quantity or weight times a unit price, producing a final line amount, e.g.
   "1 * 79.00" (qty 1 @ 79), "0.642 * 55.00" (0.642 kg @ 55/kg — a weighed item), or "2 * 86.00" (qty 2 @ 86).
   Use the FINAL computed amount for that line (i.e. quantity/weight × unit price) as "amount" — never the bare
-  unit price alone.
+  unit price alone. Digits are printed in a plainer font than the product names and are usually legible even
+  when the name beside them is not — don't let a confidently-read amount pull you into also being confident
+  about a name you didn't actually resolve.
 - The photo may be rotated, sideways, wrinkled, or partially blurry — read all text regardless of orientation.
-- Set "receipt_total" to the grand total printed on the receipt (the TOTAL / รวม / มูลค่าสินค้ารวม line), as a
-  plain number, so it can be cross-checked against the sum of the items you extracted. If no total is legible,
-  use null.
 
-NEVER invent or guess a product name, quantity, or unit that is not actually legible in the image. If a line's
-amount is readable but its description is too blurry/small/rotated to make out, use the literal description
-"รายการที่อ่านไม่ชัด" for that line instead of fabricating a specific, plausible-sounding product (e.g. do not
-write "ไข่ 10 ฟอง" or "น้ำมันพืช 1500 มิลลิลิตร" unless those exact words are legible on the receipt). A shorter,
-honest list — or one with several "รายการที่อ่านไม่ชัด" placeholders — is far more useful than a longer list of
-confident-sounding guesses. This applies to "merchant" too: leave it "" rather than guessing a store name.
+PASS 2 — using ONLY what you transcribed in pass 1 (never the receipt's general "vibe" or brand memory), set
+"description" to the (possibly partial/garbled) transcription, and set "receipt_total" to the grand total
+printed on the receipt (the TOTAL / รวม / มูลค่าสินค้ารวม line) as a plain number, so it can be cross-checked
+against the sum of the items you extracted. If no total is legible, use null.
+
+This applies to "merchant" too: transcribe it if printed and legible, otherwise leave it "" rather than
+guessing a store name from logo shape or receipt layout alone.
 
 Choose "category" as the closest match from the allowed list; use "Other" when nothing fits.
 If the input contains no expense items at all, return an empty "items" array and receipt_total null.
