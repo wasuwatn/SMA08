@@ -23,7 +23,11 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const LINE_EXPENSE_LIFF_ID = process.env.LINE_EXPENSE_LIFF_ID;
 const DEV = process.env.NODE_ENV !== 'production';
 
-const MAX_ITEMS = 10; // keeps the Flex card compact and bounds model output
+const MAX_ITEMS = 20; // keeps the Flex card bounded but fits a full grocery-run receipt
+// Sum-of-items vs. the receipt's own printed total may legitimately differ by
+// a baht or two from rounding — only flag real misses (a dropped line item),
+// not float noise.
+const TOTAL_MISMATCH_TOLERANCE = 2;
 
 // `new Date().toISOString()` is UTC — between 00:00 and 06:59 Thai time that
 // books the expense on yesterday. Shift to ICT (UTC+7) before taking the date.
@@ -108,11 +112,27 @@ async function fetchLineImage(messageId) {
 
 const SYSTEM_PROMPT = `You extract expense line items for a Thai coffee shop's bookkeeping.
 The input is either a photo of a receipt / payment slip, or a short Thai/English text such as "ค่ากาแฟ 40 ไข่ 60".
-Return every purchasable line item with its amount in Thai Baht (a text like "ค่ากาแฟ 40 ไข่ 60" has TWO items: ค่ากาแฟ 40 and ไข่ 60).
+
+For a text message like "ค่ากาแฟ 40 ไข่ 60": split into one item per name+amount pair (that example has TWO items).
+Set "receipt_total" to null for text input — there is no printed total to check against.
+
+For a photo of an itemized receipt (e.g. a supermarket/wholesale tax invoice with many lines):
+- Extract EVERY purchasable line between the header and the total/subtotal line. Do not skip lines because
+  they look similar to each other or because there are many of them — a long receipt commonly has 10-20 items.
+- Each line typically ends with a quantity or weight times a unit price, producing a final line amount, e.g.
+  "1 * 79.00" (qty 1 @ 79), "0.642 * 55.00" (0.642 kg @ 55/kg — a weighed item), or "2 * 86.00" (qty 2 @ 86).
+  Use the FINAL computed amount for that line (i.e. quantity/weight × unit price) as "amount" — never the bare
+  unit price alone.
+- The photo may be rotated, sideways, wrinkled, or partially blurry — read all text regardless of orientation.
+- Set "receipt_total" to the grand total printed on the receipt (the TOTAL / รวม / มูลค่าสินค้ารวม line), as a
+  plain number, so it can be cross-checked against the sum of the items you extracted. If no total is legible,
+  use null.
+
 Choose "category" as the closest match from the allowed list; use "Other" when nothing fits.
 "merchant" is the store/payee name if visible, else "".
-If the input contains no expense items at all, return an empty "items" array.
-Keep descriptions short (under 40 characters). Return at most ${MAX_ITEMS} items — merge minor lines if there are more.`;
+If the input contains no expense items at all, return an empty "items" array and receipt_total null.
+Keep descriptions short (under 40 characters). Return at most ${MAX_ITEMS} items — merge only the smallest/least
+distinct lines if there are genuinely more than that, and prefer merging over dropping items silently.`;
 
 async function analyzeExpense({ text, image }) {
   const { rows: catRows } = await pool.query(
@@ -129,7 +149,7 @@ async function analyzeExpense({ text, image }) {
         const amount = Number(m[2]);
         if (m[1].trim() && amount > 0) items.push({ description: m[1].trim(), amount, category: 'Other' });
       }
-      return { merchant: '', items: items.slice(0, MAX_ITEMS), raw: 'dev-fallback' };
+      return { merchant: '', items: items.slice(0, MAX_ITEMS), receiptTotal: null, raw: 'dev-fallback' };
     }
     throw new Error('OPENAI_API_KEY is not set');
   }
@@ -146,7 +166,7 @@ async function analyzeExpense({ text, image }) {
     signal: AbortSignal.timeout(45000),
     body: JSON.stringify({
       model: 'gpt-4o-mini',
-      max_tokens: 1500,
+      max_tokens: 3000,
       response_format: {
         type: 'json_schema',
         json_schema: {
@@ -155,7 +175,7 @@ async function analyzeExpense({ text, image }) {
           schema: {
             type: 'object',
             additionalProperties: false,
-            required: ['merchant', 'items'],
+            required: ['merchant', 'items', 'receipt_total'],
             properties: {
               merchant: { type: 'string' },
               items: {
@@ -170,7 +190,8 @@ async function analyzeExpense({ text, image }) {
                     category: { type: 'string', enum: categories }
                   }
                 }
-              }
+              },
+              receipt_total: { type: ['number', 'null'] }
             }
           }
         }
@@ -193,7 +214,9 @@ async function analyzeExpense({ text, image }) {
     }))
     .filter(i => i.description && Number.isFinite(i.amount) && i.amount > 0)
     .slice(0, MAX_ITEMS);
-  return { merchant: String(parsed.merchant || '').trim(), items, raw: rawText };
+  const receiptTotal = parsed.receipt_total != null && Number.isFinite(Number(parsed.receipt_total))
+    ? Number(parsed.receipt_total) : null;
+  return { merchant: String(parsed.merchant || '').trim(), items, receiptTotal, raw: rawText };
 }
 
 // ---------------------------------------------------------------------------
@@ -290,7 +313,7 @@ async function handleExpenseMessage(event, userId) {
 
   try {
     const image = isImage ? await fetchLineImage(event.message.id) : null;
-    const { merchant, items, raw } = await analyzeExpense({ text, image });
+    const { merchant, items, receiptTotal, raw } = await analyzeExpense({ text, image });
 
     if (!items.length) {
       await updateRow('pending_slips', stub.id, { status: 'discarded' });
@@ -309,7 +332,20 @@ async function handleExpenseMessage(event, userId) {
       items: JSON.stringify(withSelection),
       ocr_raw: typeof raw === 'string' ? raw : JSON.stringify(raw)
     });
-    await lineReply(replyToken, buildSlipFlex(slip, withSelection));
+    const flex = buildSlipFlex(slip, withSelection);
+    // The model also reads the receipt's own printed total, if visible — a
+    // real gap here (a dropped/misread line, not just rounding) means the
+    // extraction is probably incomplete. Surface that instead of staying
+    // silent about it, since a silently-short list looks identical to a
+    // correct one until someone checks the books later.
+    if (receiptTotal != null && Math.abs(total - receiptTotal) > TOTAL_MISMATCH_TOLERANCE) {
+      await lineReply(replyToken, [
+        textMsg(`⚠️ ยอดรวมที่อ่านได้ (${total} บาท) ไม่ตรงกับยอดในใบเสร็จ (${receiptTotal} บาท) — รายการอาจอ่านไม่ครบ กรุณาตรวจสอบก่อนบันทึก หรือถ่ายรูปใหม่ให้ชัดและตรงกว่านี้`),
+        flex
+      ]);
+      return;
+    }
+    await lineReply(replyToken, flex);
   } catch (e) {
     console.error('lineExpense: analysis failed for slip', stub.id, e.message);
     await updateRow('pending_slips', stub.id, { status: 'error' });

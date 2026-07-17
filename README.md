@@ -172,6 +172,13 @@ below) with plain checkboxes — instant, no round trip until the one final
 save. Reward customers share the OA; anyone not in the allowlist is ignored
 without a reply, so the bot is invisible to them.
 
+For itemized receipts (e.g. a 10-20 line supermarket/wholesale invoice) the
+model also reads the receipt's own printed total and cross-checks it against
+the sum of the items it extracted; a mismatch beyond rounding sends a warning
+message ahead of the item card instead of silently under-reporting. Accuracy
+still depends on photo quality — straight-on, well-lit, unfolded shots read
+far more reliably than a rotated or blurry one.
+
 Setup:
 
 1. **OpenAI**: create an API key at platform.openai.com → hub env
