@@ -666,6 +666,7 @@ const TABLE_ACCESS = {
   settings: 'settings', promotions: 'promotions',
   materials: 'materials', menuname: 'bom', bom: 'bom', childmenu: 'bom',
   packagingbom: 'bom', matprepbom: 'bom', addons: 'bom', categories: 'bom',
+  menu_modifiers: 'bom',
   customers: 'customers', redemptions: 'pos', salefront: 'pos', shifts: 'pos',
   point_ledger: 'points',
   saledelivery: 'delivery', deliverydaily: 'delivery', deliverymenu: 'delivery',
