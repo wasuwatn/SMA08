@@ -3,7 +3,8 @@
 export const TABLES = [
   'users', 'settings', 'materials', 'menuname', 'bom', 'childmenu', 'salefront', 'saledelivery',
   'stocklog', 'expenses', 'systemlog', 'customers', 'addons', 'packagingbom', 'matprepbom',
-  'deliverydaily', 'deliverymenu', 'promotions', 'shifts', 'point_ledger', 'categories'
+  'deliverydaily', 'deliverymenu', 'promotions', 'shifts', 'point_ledger', 'categories',
+  'menu_modifiers'
 ];
 
 // Transactional history tables that can grow unbounded. The Mother app's
