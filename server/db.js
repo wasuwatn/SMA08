@@ -120,10 +120,13 @@ export const TABLE_CONFIG = {
   },
   menuname: {
     pk: 'id', auto: false,
-    columns: ['id', 'name', 'category', 'front_price', 'delivery_price', 'status'],
+    // `color` is an optional hex string (e.g. "#2d8ac9") for the POS sell
+    // screen's card background; null/empty falls back to the client's
+    // deterministic per-category palette.
+    columns: ['id', 'name', 'category', 'front_price', 'delivery_price', 'status', 'color'],
     ddl: `CREATE TABLE IF NOT EXISTS menuname (
       id TEXT PRIMARY KEY, name TEXT, category TEXT, front_price DOUBLE PRECISION,
-      delivery_price DOUBLE PRECISION, status TEXT)`
+      delivery_price DOUBLE PRECISION, status TEXT, color TEXT)`
   },
   // `material_id` is a tagged reference disambiguated by its id prefix:
   //   MAT…  → a real row in `materials`
