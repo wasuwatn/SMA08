@@ -161,6 +161,16 @@ export const TABLE_CONFIG = {
     ddl: `CREATE TABLE IF NOT EXISTS addons (
       id SERIAL PRIMARY KEY, name TEXT, price_change DOUBLE PRECISION, kind TEXT DEFAULT 'extra')`
   },
+  // Links a menu (menuname.id) to an optional modifier category (an
+  // addons row whose kind is 'modcat:<mode>') it should offer at POS. The
+  // three mandatory categories (ภาชนะ/ความหวาน/ของเพิ่ม) are implied for
+  // every menu client-side and never stored here — only opt-in links are.
+  menu_modifiers: {
+    pk: 'id', auto: true,
+    columns: ['id', 'menu_id', 'category_id'],
+    ddl: `CREATE TABLE IF NOT EXISTS menu_modifiers (
+      id SERIAL PRIMARY KEY, menu_id TEXT, category_id INTEGER)`
+  },
   // Self-redeem codes minted by a customer in the LINE portal. A staff member
   // enters the code at POS, which marks it 'used' inside the checkout txn. One
   // pending code reserves one earned free-cup credit so it can't be over-minted.

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useData } from '../lib/data.jsx';
 import { api } from '../lib/api.js';
-import { money, nextSeqId, computeCupCost } from '../lib/helpers.js';
+import { money, nextSeqId, computeCupCost, parseModifierCategories, isMandatoryCategory } from '../lib/helpers.js';
 import Modal from '../components/Modal.jsx';
 
-const blankMenu = { id: '', name: '', category: '', front_price: 0, delivery_price: 0, status: 'Active' };
+const blankMenu = { id: '', name: '', category: '', front_price: 0, delivery_price: 0, status: 'Active', modifierCategoryIds: [] };
 const blankPkg = { id: '', name: '', items: [] };
 const blankMatPrep = { id: '', name: '', items: [] };
 const blankAddon = { name: '', price_change: 0, kind: 'extra' };
@@ -23,6 +23,26 @@ export default function Recipes() {
   const materials = data.materials;
   const packagingbom = data.packagingbom;
   const matprepbom = data.matprepbom;
+
+  // Modifier groups (see helpers.js) — ภาชนะ/ความหวาน/ของเพิ่ม are mandatory
+  // on every drink; everything else is opt-in per drink via menu_modifiers.
+  const modifierCategories = parseModifierCategories(data.addons);
+  const mandatoryModifierCategories = modifierCategories.filter(isMandatoryCategory);
+  const optionalModifierCategories = modifierCategories.filter(c => !isMandatoryCategory(c));
+  const openMenuModal = (m, isNew) => {
+    const linkedIds = (data.menu_modifiers || [])
+      .filter(l => l.menu_id === m.id)
+      .map(l => l.category_id);
+    setMenuModal({ ...m, modifierCategoryIds: isNew ? [] : linkedIds, _isNew: isNew });
+  };
+  const toggleModifierCategory = (categoryId) => {
+    setMenuModal(m => ({
+      ...m,
+      modifierCategoryIds: m.modifierCategoryIds.includes(categoryId)
+        ? m.modifierCategoryIds.filter(id => id !== categoryId)
+        : [...m.modifierCategoryIds, categoryId]
+    }));
+  };
 
   const ingredientCategories = [...new Set(materials.map(m => m.category))];
   const allIngredientCats = [...ingredientCategories, 'Packaging Sets', 'Mat Prep Sets'];
@@ -89,10 +109,27 @@ export default function Recipes() {
     if (!m.id.trim() || !m.name.trim()) return pushToast('Drink ID and name are required.', 'warning');
     const payload = { ...m, front_price: Number(m.front_price) || 0, delivery_price: Number(m.delivery_price) || 0 };
     delete payload._isNew;
+    delete payload.modifierCategoryIds;
     if (m._isNew) {
       if (data.menuname.some(x => x.id === m.id)) return pushToast('That drink ID already exists.', 'warning');
       await insert('menuname', payload);
     } else await update('menuname', m.id, payload);
+    // Reconcile optional modifier-group links (mandatory ones are implied,
+    // never stored). Best-effort — a failure here doesn't undo the drink save.
+    try {
+      const existingLinks = (data.menu_modifiers || []).filter(l => l.menu_id === m.id);
+      const existingIds = existingLinks.map(l => l.category_id);
+      const wantedIds = m.modifierCategoryIds || [];
+      const toAdd = wantedIds.filter(id => !existingIds.includes(id));
+      const toRemove = existingLinks.filter(l => !wantedIds.includes(l.category_id));
+      await Promise.all([
+        ...toAdd.map(categoryId => api.insert('menu_modifiers', { menu_id: m.id, category_id: categoryId })),
+        ...toRemove.map(l => api.remove('menu_modifiers', l.id))
+      ]);
+      await reload(['menu_modifiers']);
+    } catch {
+      pushToast('Drink saved, but updating its modifier groups failed.', 'warning');
+    }
     pushToast('Drink saved.', 'success');
     setMenuModal(null);
   };
@@ -158,7 +195,7 @@ export default function Recipes() {
       <div className="card bom-cell">
         <div className="card-header">
           <h3>Drink Menu</h3>
-          <button className="btn btn-primary btn-sm" onClick={() => setMenuModal({ ...blankMenu, id: nextSeqId('MN', data.menuname), _isNew: true })}><i className="fa-solid fa-plus"></i> Add Drink</button>
+          <button className="btn btn-primary btn-sm" onClick={() => openMenuModal({ ...blankMenu, id: nextSeqId('MN', data.menuname) }, true)}><i className="fa-solid fa-plus"></i> Add Drink</button>
         </div>
         <div className="bom-cell-body">
           <div className="table-wrap">
@@ -172,7 +209,7 @@ export default function Recipes() {
                     <td>{money(d.delivery_price)}</td>
                     <td><span className={`badge ${d.status === 'Active' ? 'online' : 'offline'}`}>{d.status}</span></td>
                     <td onClick={(e) => e.stopPropagation()}>
-                      <button className="btn btn-sm btn-secondary" onClick={() => setMenuModal({ ...d, _isNew: false })}><i className="fa-solid fa-pen-to-square"></i></button>
+                      <button className="btn btn-sm btn-secondary" onClick={() => openMenuModal(d, false)}><i className="fa-solid fa-pen-to-square"></i></button>
                       <button className="btn btn-sm btn-danger" style={{ marginLeft: 4 }} onClick={() => delMenu(d)}><i className="fa-solid fa-trash-can"></i></button>
                     </td>
                   </tr>
@@ -358,6 +395,24 @@ export default function Recipes() {
           </div>
           <div className="field"><label>Status</label>
             <select className="form-control" value={menuModal.status} onChange={(e) => setMenuModal(m => ({ ...m, status: e.target.value }))}><option>Active</option><option>Inactive</option></select>
+          </div>
+          <div className="field">
+            <label>Modifier Groups</label>
+            {mandatoryModifierCategories.map(c => (
+              <label key={c.id} className="input-group mb-12" style={{ alignItems: 'center', gap: 8 }}>
+                <input type="checkbox" checked disabled />
+                <span>{c.name}</span>
+                <span className="helper-text">(required on every drink)</span>
+              </label>
+            ))}
+            {optionalModifierCategories.length === 0 ? (
+              <p className="helper-text">No optional modifier groups yet — add one under Add-on Options.</p>
+            ) : optionalModifierCategories.map(c => (
+              <label key={c.id} className="input-group mb-12" style={{ alignItems: 'center', gap: 8 }}>
+                <input type="checkbox" checked={menuModal.modifierCategoryIds.includes(c.id)} onChange={() => toggleModifierCategory(c.id)} />
+                <span>{c.name}</span>
+              </label>
+            ))}
           </div>
         </Modal>
       )}
