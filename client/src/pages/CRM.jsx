@@ -87,10 +87,11 @@ export default function CRM() {
     });
 
     const events = [
-      ...[...frontOrders.values()].map(o => ({ ...o, detail: o.items.join(', ') })),
+      ...frontOrders.values(),
       ...ds.map(row => ({
         type: 'order', date: row.date, channel: 'Delivery',
-        total: Number(row.net_price) || 0, detail: row.raw_order_string || ''
+        total: Number(row.net_price) || 0,
+        items: (row.raw_order_string || '').split(',').map(s => s.trim()).filter(Boolean)
       })),
       ...(data.point_ledger || [])
         .filter(row => row.status === 'claimed' && row.customer_id != null && Number(row.customer_id) === viewing.id)
@@ -204,11 +205,15 @@ export default function CRM() {
                         : <span className="badge local">{h.channel}</span>}
                     </td>
                     <td>
-                      <span className="helper-text">
-                        {h.type === 'points'
-                          ? (h.note || (h.kind === 'spend' ? 'Redeemed for free cup' : 'Points received'))
-                          : (h.detail || '—')}
-                      </span>
+                      {h.type === 'points' ? (
+                        <span className="helper-text">
+                          {h.note || (h.kind === 'spend' ? 'Redeemed for free cup' : 'Points received')}
+                        </span>
+                      ) : h.items.length ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          {h.items.map((it, j) => <span key={j} className="helper-text">{it}</span>)}
+                        </div>
+                      ) : <span className="helper-text">—</span>}
                     </td>
                     <td>
                       {h.type === 'points'
