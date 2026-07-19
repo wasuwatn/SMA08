@@ -12,6 +12,7 @@ export default function CRM() {
   const [search, setSearch] = useState('');
   const [granting, setGranting] = useState(null); // { customer, points, note }
   const [busy, setBusy] = useState(false);
+  const [viewing, setViewing] = useState(null); // customer whose history modal is open
 
   const canGrant = user && (user.role === 'Admin' || String(user.access || '').split(',').includes('points'));
 
@@ -61,6 +62,47 @@ export default function CRM() {
     return rows.filter(r => [r.name, r.address].some(v => String(v || '').toLowerCase().includes(q)));
   }, [rows, search]);
 
+  // One combined, date-sorted feed of everything that happened to this
+  // customer: orders (front rows grouped by order_no, one row per delivery
+  // order) and claimed point-ledger events (grants/links earned, spend redeemed).
+  const viewingHistory = useMemo(() => {
+    if (!viewing) return [];
+    const nl = viewing.name.toLowerCase();
+    const matches = (s) => s.customer_id != null
+      ? Number(s.customer_id) === viewing.id
+      : s.customer_name && s.customer_name.toLowerCase() === nl;
+    const fs = salefront.filter(matches);
+    const ds = saledelivery.filter(matches);
+
+    const frontOrders = new Map();
+    fs.forEach(row => {
+      const key = row.order_no || `legacy-${row.id}`;
+      let order = frontOrders.get(key);
+      if (!order) {
+        order = { type: 'order', date: row.date, channel: 'POS', total: 0, items: [] };
+        frontOrders.set(key, order);
+      }
+      order.total += Number(row.total_price) || 0;
+      order.items.push(`${row.menu_name}${row.variant ? ` (${row.variant})` : ''} x${row.quantity}`);
+    });
+
+    const events = [
+      ...[...frontOrders.values()].map(o => ({ ...o, detail: o.items.join(', ') })),
+      ...ds.map(row => ({
+        type: 'order', date: row.date, channel: 'Delivery',
+        total: Number(row.net_price) || 0, detail: row.raw_order_string || ''
+      })),
+      ...(data.point_ledger || [])
+        .filter(row => row.status === 'claimed' && row.customer_id != null && Number(row.customer_id) === viewing.id)
+        .map(row => ({
+          type: 'points', date: (row.claimed_at || row.created_at || '').slice(0, 10),
+          points: Number(row.points) || 0, note: row.note, kind: row.kind
+        }))
+    ];
+
+    return events.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  }, [viewing, salefront, saledelivery, data.point_ledger]);
+
   const doGrant = async () => {
     const pts = Number(granting.points);
     if (!Number.isInteger(pts) || pts <= 0) return pushToast('Points must be a positive whole number.', 'warning');
@@ -94,7 +136,13 @@ export default function CRM() {
             <tbody>
               {filteredRows.length ? filteredRows.map((r, i) => (
                 <tr key={r.id}>
-                  <td><strong>#{i + 1}</strong></td><td><strong>{r.name}</strong></td>
+                  <td><strong>#{i + 1}</strong></td>
+                  <td>
+                    <button onClick={() => setViewing(r.customer)}
+                      style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit', color: 'var(--primary)', textDecoration: 'underline' }}>
+                      <strong>{r.name}</strong>
+                    </button>
+                  </td>
                   <td><span className="helper-text">{r.address}</span></td>
                   <td>{r.orders}</td><td><strong>{money(r.spending)}</strong></td>
                   <td>
@@ -138,6 +186,40 @@ export default function CRM() {
               onChange={(e) => setGranting(g => ({ ...g, note: e.target.value }))} />
           </div>
           <p className="helper-text">Points are added immediately — no link for the customer to click.</p>
+        </Modal>
+      )}
+
+      {viewing && (
+        <Modal title={`History — ${viewing.name}`} onClose={() => setViewing(null)} maxWidth={640}>
+          <div className="table-wrap" style={{ maxHeight: '60vh' }}>
+            <table className="data">
+              <thead><tr><th>Date</th><th>Type</th><th>Detail</th><th>Amount</th></tr></thead>
+              <tbody>
+                {viewingHistory.length ? viewingHistory.map((h, i) => (
+                  <tr key={i}>
+                    <td>{h.date || 'N/A'}</td>
+                    <td>
+                      {h.type === 'points'
+                        ? <span className={`badge ${h.points > 0 ? 'bg-green' : 'local'}`}>{h.points > 0 ? 'Points' : 'Redeemed'}</span>
+                        : <span className="badge local">{h.channel}</span>}
+                    </td>
+                    <td>
+                      <span className="helper-text">
+                        {h.type === 'points'
+                          ? (h.note || (h.kind === 'spend' ? 'Redeemed for free cup' : 'Points received'))
+                          : (h.detail || '—')}
+                      </span>
+                    </td>
+                    <td>
+                      {h.type === 'points'
+                        ? <strong style={{ color: h.points > 0 ? 'var(--success-color)' : undefined }}>{h.points > 0 ? '+' : ''}{h.points}</strong>
+                        : <strong>{money(h.total)}</strong>}
+                    </td>
+                  </tr>
+                )) : <tr className="empty-row"><td colSpan={4}>No history yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
         </Modal>
       )}
     </div>
