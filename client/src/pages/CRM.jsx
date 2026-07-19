@@ -16,14 +16,18 @@ export default function CRM() {
   const canGrant = user && (user.role === 'Admin' || String(user.access || '').split(',').includes('points'));
 
   // Claimed ledger rows only — pending links belong to nobody yet.
-  const balances = useMemo(() => {
-    const map = new Map();
+  // Balance nets earned + spent rows; earned totals only the positive (link/crm) grants.
+  const { balances, earned } = useMemo(() => {
+    const balMap = new Map();
+    const earnedMap = new Map();
     for (const row of data.point_ledger || []) {
       if (row.status !== 'claimed' || row.customer_id == null) continue;
       const id = Number(row.customer_id);
-      map.set(id, (map.get(id) || 0) + (Number(row.points) || 0));
+      const pts = Number(row.points) || 0;
+      balMap.set(id, (balMap.get(id) || 0) + pts);
+      if (pts > 0) earnedMap.set(id, (earnedMap.get(id) || 0) + pts);
     }
-    return map;
+    return { balances: balMap, earned: earnedMap };
   }, [data.point_ledger]);
 
   const rows = customers.map(c => {
@@ -42,7 +46,8 @@ export default function CRM() {
     return {
       id: c.id, name: c.name, address: c.address || 'N/A',
       orders: fs.length + ds.length, spending, cups: frontCups + deliCups,
-      last: dates[0] || 'N/A', points: balances.get(c.id) || 0, customer: c
+      last: dates[0] || 'N/A', points: balances.get(c.id) || 0,
+      pointsEarned: earned.get(c.id) || 0, customer: c
     };
   }).filter(r => r.spending > 0 || r.points !== 0).sort((a, b) => b.spending - a.spending);
 
@@ -85,13 +90,18 @@ export default function CRM() {
         </div>
         <div className="table-wrap">
           <table className="data">
-            <thead><tr><th>Rank</th><th>Name</th><th>Address</th><th>Orders</th><th>Spending</th><th>Points</th><th>Last Order</th>{canGrant && <th></th>}</tr></thead>
+            <thead><tr><th>Rank</th><th>Name</th><th>Address</th><th>Orders</th><th>Spending</th><th>Total Points</th><th>Remaining Points</th><th>Last Order</th>{canGrant && <th></th>}</tr></thead>
             <tbody>
               {filteredRows.length ? filteredRows.map((r, i) => (
                 <tr key={r.id}>
                   <td><strong>#{i + 1}</strong></td><td><strong>{r.name}</strong></td>
                   <td><span className="helper-text">{r.address}</span></td>
                   <td>{r.orders}</td><td><strong>{money(r.spending)}</strong></td>
+                  <td>
+                    {r.pointsEarned > 0
+                      ? <strong>⭐ {r.pointsEarned}</strong>
+                      : <span className="helper-text">{r.pointsEarned}</span>}
+                  </td>
                   <td>
                     {r.points > 0
                       ? <strong style={{ color: 'var(--success-color)' }}>⭐ {r.points}</strong>
@@ -107,7 +117,7 @@ export default function CRM() {
                     </td>
                   )}
                 </tr>
-              )) : <tr className="empty-row"><td colSpan={canGrant ? 8 : 7}>No customer records found.</td></tr>}
+              )) : <tr className="empty-row"><td colSpan={canGrant ? 9 : 8}>No customer records found.</td></tr>}
             </tbody>
           </table>
         </div>
