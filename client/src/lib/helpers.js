@@ -1,4 +1,10 @@
 // Shared formatting + small utilities.
+//
+// This file is now a re-export barrel: the implementations live in
+// lib/format.js, lib/bom.js, lib/deliveryImport.js, and lib/modifiers.js
+// (split by concern), kept re-exported here so existing imports across the
+// app don't need to change. Constants with no natural sub-module of their
+// own stay defined directly below.
 
 export const TABLES = [
   'users', 'settings', 'materials', 'menuname', 'bom', 'childmenu', 'salefront', 'saledelivery',
@@ -45,30 +51,6 @@ export const claimUrl = (token) => {
   return `${(import.meta.env.VITE_PORTAL_BASE || window.location.origin).replace(/\/$/, '')}/customer.html?claim=${token}`;
 };
 
-export const money = (v) =>
-  `฿${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-export const today = () => new Date().toISOString().split('T')[0];
-
-// Next sequential id for a prefixed series, e.g. nextSeqId('MAT', materials) -> 'MAT007'.
-export function nextSeqId(prefix, rows, pad = 3) {
-  let max = 0;
-  const re = new RegExp(`^${prefix}(\\d+)$`);
-  rows.forEach(r => {
-    const m = String(r.id ?? '').match(re);
-    if (m) max = Math.max(max, parseInt(m[1], 10));
-  });
-  return `${prefix}${String(max + 1).padStart(pad, '0')}`;
-}
-
-export function getYearFromDate(value) {
-  if (!value) return NaN;
-  const raw = String(value).trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return NaN;
-  const year = parseInt(raw.slice(0, 4), 10);
-  return year > 2000 && year < 2100 ? year : NaN;
-}
-
 // Parse a discount token like "10%" (percentage of base) or "15" (flat amount).
 export function parseDiscount(token, base) {
   const t = token == null ? '' : String(token).trim();
@@ -81,165 +63,7 @@ export function parseDiscount(token, base) {
   return isNaN(flat) ? 0 : flat;
 }
 
-// Count cups inside a delivery raw_order_string e.g. "Espresso (3), Latte (2)".
-export function parseOrderCups(raw) {
-  const map = {};
-  if (!raw) return map;
-  raw.split(',').forEach(item => {
-    const m = item.trim().match(/^(.*?)\s*\((\d+)\)$/);
-    if (m) map[m[1]] = (map[m[1]] || 0) + parseInt(m[2], 10);
-  });
-  return map;
-}
-
-// Normalize Wongnai delivery report header names so CSV/TSV/XLSX exports with
-// different casing (or the "time" column) line up with the fields the app
-// expects: date, sales, orders, avgBasketSize, menuName, amount.
-export const DELIVERY_HEADER_ALIASES = {
-  time: 'date', date: 'date', sales: 'sales', orders: 'orders',
-  avgbasketsize: 'avgBasketSize', menuname: 'menuName', amount: 'amount'
-};
-
-// Split a Wongnai menu line into its component drink names.
-//  - Strips a leading bracket tag, e.g. "[เซตสุดฮิต] A + B" -> "A + B".
-//  - A combo joined by "+" becomes multiple drinks (1 combo = 1 of each).
-//  - Single items (incl. names using "x" like "Matcha x Yuzu") are returned as-is.
-export function splitComboName(name) {
-  const s = String(name || '').trim().replace(/^\s*\[[^\]]*\]\s*/, '');
-  if (s.includes('+')) return s.split('+').map(x => x.trim()).filter(Boolean);
-  return s ? [s] : [];
-}
-
-// Flatten delivery menu rows into { drinkName: totalCups }, expanding combos.
-// Accepts rows shaped like the CSV ({ menuName, amount }) or the DB
-// ({ menu_name, qty }).
-export function decomposeDeliveryMenu(rows) {
-  const map = {};
-  (rows || []).forEach(r => {
-    const qty = Number(r.qty ?? r.amount) || 0;
-    splitComboName(r.menu_name ?? r.menuName).forEach(n => { map[n] = (map[n] || 0) + qty; });
-  });
-  return map;
-}
-
-// Expand a PBOM/MPREP set id into its component [{material_id, qty_used}] items.
-// Returns null if the id is not a set prefix (caller should treat it as a plain material).
-export function expandSetItems(materialId, packagingbom, matprepbom) {
-  const id = String(materialId);
-  const pool = id.startsWith('PBOM') ? packagingbom : id.startsWith('MPREP') ? matprepbom : null;
-  if (!pool) return null;
-  const set = pool.find(p => p.id === materialId);
-  if (!set) return [];
-  try { return JSON.parse(set.items); } catch { return []; }
-}
-
-// Aggregate raw-material requirements for drink lines.
-// Each line: { name, qty, childId? }.
-//  - Base BOM rows for the drink are always deducted (packaging "PBOM" sets and
-//    mat prep "MPREP" sets are expanded into their component materials).
-//  - If the line has a childId, the selected child menu's material (e.g. the bean
-//    the customer picked) is deducted too.
-export function computeRequirements(lines, bom, packagingbom = [], childmenu = [], matprepbom = []) {
-  const req = {};
-  const add = (matId, amount) => { if (matId) req[matId] = (req[matId] || 0) + amount; };
-  lines.forEach(({ name, qty, childId }) => {
-    bom.filter(b => b.menu_name === name).forEach(r => {
-      const amount = Number(r.qty_used) * qty;
-      const setItems = expandSetItems(r.material_id, packagingbom, matprepbom);
-      if (setItems !== null) {
-        setItems.forEach(it => add(it.material_id, Number(it.qty_used) * amount));
-      } else {
-        add(r.material_id, amount);
-      }
-    });
-    if (childId) {
-      const child = childmenu.find(c => String(c.id) === String(childId));
-      if (child) add(child.material_id, Number(child.qty_used || 1) * qty);
-    }
-  });
-  return req;
-}
-
-// BOM cost of one cup given its `[{material_id, qty_used}]` rows (sum of
-// material.unit_price * qty_used, expanding PBOM/MPREP sets). Returns
-// { cost, warn } — warn flags missing or inactive materials. Pass
-// bom.filter(b => b.menu_name === name) for a saved menu's full recipe.
-export function computeCupCost(bomRows, materials, packagingbom = [], matprepbom = []) {
-  let cost = 0, warn = false;
-  bomRows.forEach(r => {
-    if (!r.material_id) return;
-    const q = Number(r.qty_used) || 0;
-    const setItems = expandSetItems(r.material_id, packagingbom, matprepbom);
-    if (setItems !== null) {
-      setItems.forEach(it => {
-        const sm = materials.find(m => m.id === it.material_id);
-        if (sm) { cost += Number(sm.unit_price) * Number(it.qty_used) * q; if (sm.status !== 'Active') warn = true; }
-        else warn = true;
-      });
-      if (!setItems.length) warn = true;
-    } else {
-      const m = materials.find(x => x.id === r.material_id);
-      if (m) { cost += Number(m.unit_price) * q; if (m.status !== 'Active') warn = true; }
-      else warn = true;
-    }
-  });
-  return { cost, warn };
-}
-
-export function csvEscape(val) {
-  const s = val === null || val === undefined ? '' : String(val);
-  return `"${s.replace(/"/g, '""')}"`;
-}
-
-export function downloadFile(filename, content, mime = 'text/plain;charset=utf-8') {
-  const blob = content instanceof Blob ? content : new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-// ---- Modifier categories ---------------------------------------------------
-// `addons.kind` is overloaded (see coffee-pos-buddy's catalog.ts, which owns
-// this convention): a "modcat:<single|multi>" row is a category shell (never
-// itself sellable), a "modopt:<catId>" row is one option belonging to that
-// category. Everything else (undefined, or the legacy container/sweetness/
-// extra enum this page's own Add-on modal still writes) is a plain add-on.
-const MODCAT_PREFIX = 'modcat:';
-const MODOPT_PREFIX = 'modopt:';
-
-export const isCategoryRow = (a) => String(a.kind || '').startsWith(MODCAT_PREFIX);
-export const isOptionRow = (a) => String(a.kind || '').startsWith(MODOPT_PREFIX);
-export const categoryKind = (mode) => `${MODCAT_PREFIX}${mode}`;
-export const optionKind = (categoryId) => `${MODOPT_PREFIX}${categoryId}`;
-
-export function parseModifierCategories(addons) {
-  return addons.filter(isCategoryRow).map(c => ({
-    id: c.id,
-    name: c.name,
-    mode: c.kind === categoryKind('multi') ? 'multi' : 'single',
-    options: addons.filter(a => a.kind === optionKind(c.id))
-  }));
-}
-
-// Categories every menu offers regardless of per-menu links (see
-// menu_modifiers) — kept in sync with coffee-pos-buddy's catalog.ts.
-export const MANDATORY_MODIFIER_NAMES = ['ภาชนะ', 'ความหวาน', 'ของเพิ่ม'];
-export const isMandatoryCategory = (c) => MANDATORY_MODIFIER_NAMES.includes(c.name);
-
-export function parseCSVLine(text, delim = ',') {
-  const result = [];
-  let inQuote = false, entry = '';
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === '"') inQuote = !inQuote;
-    else if (ch === delim && !inQuote) { result.push(entry); entry = ''; }
-    else entry += ch;
-  }
-  result.push(entry);
-  return result.map(v => v.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
-}
+export * from './format.js';
+export * from './bom.js';
+export * from './deliveryImport.js';
+export * from './modifiers.js';
