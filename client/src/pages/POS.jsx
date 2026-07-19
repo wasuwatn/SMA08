@@ -1,21 +1,17 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import QRCode from 'qrcode';
 import { useData } from '../lib/data.jsx';
 import { api } from '../lib/api.js';
 import { money, today, computeRequirements, computeCupCost, claimUrl } from '../lib/helpers.js';
-import { promptpayPayload } from '../lib/promptpay.js';
 import Receipt from '../components/Receipt.jsx';
 import Modal from '../components/Modal.jsx';
 import DrinkCustomizerModal from '../components/pos/DrinkCustomizerModal.jsx';
 import SalesHistoryModal from '../components/pos/SalesHistoryModal.jsx';
 import ShiftModals from '../components/pos/ShiftModals.jsx';
-
-// How far back POS keeps its own local Sales History / shift-cash lookback.
-// POS doesn't load the full salefront table (see skipHeavyTables in
-// data.jsx) — a shift never runs longer than this, so it's plenty for both
-// the history overlay and the close-shift cash estimate.
-const HISTORY_WINDOW_DAYS = 14;
-const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().split('T')[0]; };
+import { useCart } from '../hooks/pos/useCart.js';
+import { useRecentSales } from '../hooks/pos/useRecentSales.js';
+import { useShiftRegister } from '../hooks/pos/useShiftRegister.js';
+import { usePosPayment } from '../hooks/pos/usePosPayment.js';
 
 const PAY_METHODS = ['Cash', 'PromptPay', 'Transfer'];
 
@@ -30,7 +26,7 @@ const DEFAULT_CONTAINERS = [
 const DEFAULT_SWEETNESS = ['No Sweet', '25%', '50%', '100%'].map(v => ({ value: v, label: v, adj: 0 }));
 
 export default function POS() {
-  const { user, data, settings, pushToast, checkoutPos, reload } = useData();
+  const { user, data, settings, pushToast, checkoutPos } = useData();
   const drinks = data.menuname.filter(d => d.status === 'Active');
   const categories = ['All', ...new Set(drinks.map(d => d.category))];
   // Container ("Ice"/"Hot"/"Bottle") and Sweetness are both required,
@@ -48,17 +44,19 @@ export default function POS() {
 
   const [cat, setCat] = useState('All');
 
-  // Cart & Order details
-  const [cart, setCart] = useState([]);
+  // Cart, promo code, and their derived totals.
+  const {
+    cart, addToCart, updateCartItemQty, removeCartItem,
+    promoCode, setPromoCode, appliedDiscount, handleApplyPromo,
+    cartSubtotal, discountAmount, cartTotal, resetCart
+  } = useCart();
+
+  // Order details
   const [orderType, setOrderType] = useState('Dine-in');
   const [date, setDate] = useState(today());
   const [customer, setCustomer] = useState('');
   const [address, setAddress] = useState('');
   const [deliveryPlatform, setDeliveryPlatform] = useState('');
-
-  // Promo code & discounts
-  const [promoCode, setPromoCode] = useState('');
-  const [appliedDiscount, setAppliedDiscount] = useState({ code: '', type: 'none', value: 0 });
 
   // Self-redeem code (customer minted it in the rewards portal, backed by points)
   const [redeemCode, setRedeemCode] = useState('');
@@ -79,33 +77,15 @@ export default function POS() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedHistoryOrder, setSelectedHistoryOrder] = useState(null);
 
-  // Payment
-  const [payMethod, setPayMethod] = useState('Cash');
-  const [cashReceived, setCashReceived] = useState('');
-  const [qrOpen, setQrOpen] = useState(false);
-  const [qrDataUrl, setQrDataUrl] = useState('');
-
   // Receipt printing: receiptData mounts the hidden 58mm slip and prints it;
   // lastReceipt keeps the most recent sale around for a reprint.
   const [receiptData, setReceiptData] = useState(null);
   const [lastReceipt, setLastReceipt] = useState(null);
 
-  // Register shift
-  const [shiftModal, setShiftModal] = useState(null); // 'open' | 'close' | null
-  const [shiftCash, setShiftCash] = useState('');
-  const [shiftNote, setShiftNote] = useState('');
-  const [zReport, setZReport] = useState(null); // /api/shift/close response
-
   // Recent sales (last HISTORY_WINDOW_DAYS) fetched on demand — POS keeps its
   // own small window instead of the shared data.salefront cache, which the
   // satellite apps skip loading (see skipHeavyTables in data.jsx).
-  const [recentSales, setRecentSales] = useState([]);
-  const refreshRecentSales = useCallback(() => {
-    api.list('salefront', { since: daysAgo(HISTORY_WINDOW_DAYS) })
-      .then(rows => setRecentSales(rows.filter(r => r.status !== 'void')))
-      .catch(() => {});
-  }, []);
-  useEffect(() => { refreshRecentSales(); }, [refreshRecentSales]);
+  const { recentSales, refreshRecentSales } = useRecentSales();
 
   // Points-backed loyalty status for the typed/selected customer, looked up
   // from the server (accounts for pending self-redeem codes too, so a
@@ -152,40 +132,19 @@ export default function POS() {
   const eligibleForFree = selected && promotion ? Number(selected.front_price) <= Number(promotion.max_free_value) : false;
   const canRedeemFree = !!promotion && freeRemaining > 0 && eligibleForFree;
 
-  // Cart calculation aggregates
-  const cartSubtotal = useMemo(() => {
-    return cart.reduce((sum, item) => sum + item.totalPrice, 0);
-  }, [cart]);
-
-  const discountAmount = useMemo(() => {
-    if (appliedDiscount.type === 'percent') {
-      return Math.round((cartSubtotal * appliedDiscount.value) / 100);
-    } else if (appliedDiscount.type === 'flat') {
-      return Math.min(cartSubtotal, appliedDiscount.value);
-    }
-    return 0;
-  }, [cartSubtotal, appliedDiscount]);
-
-  const cartTotal = useMemo(() => {
-    return cartSubtotal - discountAmount;
-  }, [cartSubtotal, discountAmount]);
-
-  // Cash tendered → change due (only meaningful for cash payments).
-  const received = parseFloat(cashReceived);
-  const changeDue = Number.isFinite(received) ? received - cartTotal : null;
-
   // Current register shift (one may be open at a time; cached with the rest of
   // the catalog so the indicator works offline too).
   const openShift = (data.shifts || []).find(s => s.status === 'open') || null;
 
-  // PromptPay QR for the current total, generated when the modal opens.
-  useEffect(() => {
-    if (!qrOpen) return;
-    if (!settings.promptpay_id) { setQrDataUrl(''); return; }
-    QRCode.toDataURL(promptpayPayload(settings.promptpay_id, cartTotal), { width: 280, margin: 1 })
-      .then(setQrDataUrl)
-      .catch(() => setQrDataUrl(''));
-  }, [qrOpen, cartTotal, settings.promptpay_id]);
+  // Payment method, cash tendered/change, and the PromptPay QR.
+  const { payMethod, setPayMethod, cashReceived, setCashReceived, qrOpen, setQrOpen, qrDataUrl, received, changeDue }
+    = usePosPayment(cartTotal, settings.promptpay_id);
+
+  // Register shift open/close + Z-report.
+  const {
+    shiftModal, setShiftModal, shiftCash, setShiftCash, shiftNote, setShiftNote,
+    zReport, setZReport, doOpenShift, doCloseShift, shiftCashEstimate
+  } = useShiftRegister(openShift, recentSales);
 
   // Sales history grouping: one entry per checkout (order_no), not per customer
   // name. Rows from before order_no existed each become their own single-line
@@ -304,43 +263,18 @@ export default function POS() {
     const effectiveQty = isFree ? 1 : qty;
     const effectiveSingleCup = isFree ? 0 : singleCup;
 
-    setCart(prev => {
-      // Free cups are never merged into an existing line — each is its own
-      // 1-cup line so the per-customer credit count (and comp count) stays exact.
-      const existingIdx = !isFree ? prev.findIndex(item =>
-        !item.isFree &&
-        item.drink.id === selected.id &&
-        item.childId === childId &&
-        item.sweet === sweet &&
-        item.container === container &&
-        JSON.stringify(item.addonRows) === JSON.stringify(chosenAddons)
-      ) : -1;
-
-      if (existingIdx > -1) {
-        const next = [...prev];
-        next[existingIdx] = {
-          ...next[existingIdx],
-          qty: next[existingIdx].qty + effectiveQty,
-          totalPrice: next[existingIdx].singleCup * (next[existingIdx].qty + effectiveQty)
-        };
-        return next;
-      } else {
-        return [...prev, {
-          id: Math.random().toString(36).substring(2, 11),
-          drink: selected,
-          childId,
-          childObj,
-          sweet,
-          container,
-          addonRows: chosenAddons,
-          addonsPrice,
-          singleCup: effectiveSingleCup,
-          qty: effectiveQty,
-          totalPrice: effectiveSingleCup * effectiveQty,
-          isFree,
-          promotionId: isFreeRedeem ? promotion.id : null
-        }];
-      }
+    addToCart({
+      drink: selected,
+      childId,
+      childObj,
+      sweet,
+      container,
+      addonRows: chosenAddons,
+      addonsPrice,
+      singleCup: effectiveSingleCup,
+      qty: effectiveQty,
+      isFree,
+      promotionId: isFreeRedeem ? promotion.id : null
     });
 
     setCustomizerOpen(false);
@@ -349,84 +283,6 @@ export default function POS() {
     setUseComp(false);
     pushToast(isFree ? 'Free cup added to order.' : 'Added to order.', 'success');
   };
-
-  // Edit/Modify item quantity directly in the Cart list
-  const updateCartItemQty = (id, increment) => {
-    setCart(prev => prev.map(item => {
-      if (item.id === id && !item.isFree) {
-        const nextQty = Math.max(1, item.qty + (increment ? 1 : -1));
-        return {
-          ...item,
-          qty: nextQty,
-          totalPrice: item.singleCup * nextQty
-        };
-      }
-      return item;
-    }));
-  };
-
-  const removeCartItem = (id) => {
-    setCart(prev => prev.filter(item => item.id !== id));
-    pushToast('Item removed.', 'info');
-  };
-
-  // Applying promo codes
-  const handleApplyPromo = () => {
-    const code = promoCode.trim().toUpperCase();
-    if (!code) {
-      setAppliedDiscount({ code: '', type: 'none', value: 0 });
-      return;
-    }
-
-    if (code === 'SAGE10' || code === 'PROMO10') {
-      setAppliedDiscount({ code, type: 'percent', value: 10 });
-      pushToast('10% discount code applied.', 'success');
-    } else if (code === 'WELCOME') {
-      setAppliedDiscount({ code, type: 'flat', value: 50 });
-      pushToast('฿50 flat discount applied.', 'success');
-    } else {
-      const num = parseFloat(code);
-      if (!isNaN(num) && num > 0) {
-        setAppliedDiscount({ code: 'MANUAL', type: 'flat', value: num });
-        pushToast(`฿${num} discount applied.`, 'success');
-      } else {
-        pushToast('Invalid promo code.', 'warning');
-      }
-    }
-  };
-
-  // ---- Register shift open / close ----------------------------------------
-  const doOpenShift = async () => {
-    try {
-      await api.shiftOpen(parseFloat(shiftCash) || 0);
-      await reload(['shifts']);
-      setShiftModal(null);
-      pushToast('Shift opened.', 'success');
-    } catch (e) {
-      pushToast(e.message || 'Could not open shift.', 'warning');
-    }
-  };
-
-  const doCloseShift = async () => {
-    try {
-      const r = await api.shiftClose(shiftCash === '' ? null : parseFloat(shiftCash), shiftNote);
-      await reload(['shifts']);
-      setShiftModal(null);
-      setZReport(r);
-    } catch (e) {
-      pushToast(e.message || 'Could not close shift.', 'warning');
-    }
-  };
-
-  // Client-side estimate of the open shift's cash so the close dialog can show
-  // the expected drawer before the server computes the authoritative Z-report.
-  const shiftCashEstimate = useMemo(() => {
-    if (!openShift) return 0;
-    return recentSales
-      .filter(s => String(s.shift_id || '') === String(openShift.id))
-      .filter(s => !s.payment_method || s.payment_method === 'Cash')
-      .reduce((sum, s) => sum + (Number(s.total_price) || 0), 0);
-  }, [openShift, recentSales]);
 
   // Reprint a past order from the Sales History overlay.
   const printHistoryOrder = (o) => setReceiptData({
@@ -546,12 +402,10 @@ export default function POS() {
     // Clear the register right away — the cashier shouldn't wait on the
     // network/DB round trip to start the next order. The actual save runs
     // in the background; any failure is surfaced via a toast afterwards.
-    setCart([]);
+    resetCart();
     setCustomer('');
     setAddress('');
     setDeliveryPlatform('');
-    setPromoCode('');
-    setAppliedDiscount({ code: '', type: 'none', value: 0 });
     setRedeemCode('');
     setRedemption(null);
     setPayMethod('Cash');
